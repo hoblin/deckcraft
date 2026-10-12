@@ -155,6 +155,28 @@ impl PhType {
     pub fn is_footer_kind(self) -> bool {
         matches!(self, PhType::Date | PhType::Footer | PhType::SlideNum | PhType::Header)
     }
+    pub fn text_style(self) -> TextStyle {
+        match self {
+            PhType::Title | PhType::CtrTitle => TextStyle::Title,
+            PhType::Body
+            | PhType::Obj
+            | PhType::SubTitle
+            | PhType::Table
+            | PhType::Chart
+            | PhType::Diagram
+            | PhType::Media
+            | PhType::Picture
+            | PhType::ClipArt => TextStyle::Body,
+            _ => TextStyle::Other,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextStyle {
+    Title,
+    Body,
+    Other,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -197,6 +219,9 @@ impl Geom {
             Geom::Preset { name, .. } => Some(name),
             Geom::Custom { .. } => None,
         }
+    }
+    pub fn is_plain_rect(&self) -> bool {
+        matches!(self, Geom::Preset { name, adj } if name == "rect" && adj.is_empty())
     }
 }
 
@@ -298,6 +323,10 @@ pub struct Shape {
     pub xfrm: Option<Xfrm>,
     pub kind: ShapeKind,
     pub geom: Geom,
+    /// A placeholder's geometry is its own, even a plain rectangle; otherwise it takes its
+    /// layout's or master's.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub geom_set: bool,
     pub ph: Option<Placeholder>,
     /// `None`: inherited (placeholder chain or style); `Some(Fill::None)`: no fill.
     pub fill: Option<Fill>,
@@ -328,6 +357,7 @@ impl Default for Shape {
             xfrm: None,
             kind: ShapeKind::Shape,
             geom: Geom::default(),
+            geom_set: false,
             ph: None,
             fill: None,
             line: None,
@@ -595,6 +625,9 @@ pub struct Layout {
     pub shapes: Vec<Shape>,
     pub background: Option<Background>,
     pub show_master_shapes: bool,
+    /// Replaces the master's colour map for this layout's slides; `None` keeps the master's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_map: Option<Vec<(String, String)>>,
     pub preserve: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_ext: Option<String>,
@@ -641,19 +674,7 @@ impl Master {
     }
     /// Resolve `bg1`/`tx1`/`bg2`/`tx2` through the colour map.
     pub fn map_slot(&self, slot: SchemeSlot) -> SchemeSlot {
-        let key = match slot {
-            SchemeSlot::Bg1 => "bg1",
-            SchemeSlot::Tx1 => "tx1",
-            SchemeSlot::Bg2 => "bg2",
-            SchemeSlot::Tx2 => "tx2",
-            other => return other,
-        };
-        self.color_map.iter().find(|(k, _)| k == key).and_then(|(_, v)| SchemeSlot::from_xml(v)).unwrap_or(match slot {
-            SchemeSlot::Bg1 => SchemeSlot::Lt1,
-            SchemeSlot::Tx1 => SchemeSlot::Dk1,
-            SchemeSlot::Bg2 => SchemeSlot::Lt2,
-            _ => SchemeSlot::Dk2,
-        })
+        map_slot(&self.color_map, slot)
     }
     /// The theme's colour scheme with the colour map applied (`bg1`… resolve to mapped colours).
     pub fn scheme(&self) -> ColorScheme {
@@ -672,6 +693,22 @@ impl Master {
         }
         s
     }
+}
+
+pub fn map_slot(map: &[(String, String)], slot: SchemeSlot) -> SchemeSlot {
+    let key = match slot {
+        SchemeSlot::Bg1 => "bg1",
+        SchemeSlot::Tx1 => "tx1",
+        SchemeSlot::Bg2 => "bg2",
+        SchemeSlot::Tx2 => "tx2",
+        other => return other,
+    };
+    map.iter().find(|(k, _)| k == key).and_then(|(_, v)| SchemeSlot::from_xml(v)).unwrap_or(match slot {
+        SchemeSlot::Bg1 => SchemeSlot::Lt1,
+        SchemeSlot::Tx1 => SchemeSlot::Dk1,
+        SchemeSlot::Bg2 => SchemeSlot::Lt2,
+        _ => SchemeSlot::Dk2,
+    })
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

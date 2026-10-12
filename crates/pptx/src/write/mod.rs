@@ -19,7 +19,6 @@ use crate::PptxError;
 use crate::opc::{self, NS_A, NS_P, NS_P14, NS_R, PackageOut, RelsOut};
 use crate::xml::{A, W};
 
-const CT_PRES: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml";
 const CT_SLIDE: &str = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml";
 const CT_LAYOUT: &str = "application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml";
 const CT_MASTER: &str = "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml";
@@ -227,6 +226,24 @@ const CLR_KEYS: [(&str, &str); 12] = [
 ];
 
 fn clr_map(w: &mut W, map: &[(String, String)]) {
+    w.empty("p:clrMap", clr_map_attrs(map));
+}
+
+fn clr_map_ovr(w: &mut W, map: Option<&[(String, String)]>) {
+    w.open0("p:clrMapOvr");
+    match map {
+        Some(m) => w.empty("a:overrideClrMapping", clr_map_attrs(m)),
+        None => w.empty0("a:masterClrMapping"),
+    }
+    w.close("p:clrMapOvr");
+}
+
+fn header_footer(w: &mut W, slide_number: bool, footer: bool, date: bool) {
+    let off = |on: bool| (!on).then_some("0");
+    w.empty("p:hf", A::new().o("sldNum", off(slide_number)).a("hdr", "0").o("ftr", off(footer)).o("dt", off(date)));
+}
+
+fn clr_map_attrs(map: &[(String, String)]) -> A {
     let mut a = A::new();
     for (k, d) in CLR_KEYS {
         let v = map
@@ -237,7 +254,7 @@ fn clr_map(w: &mut W, map: &[(String, String)]) {
             .unwrap_or(d);
         a = a.a(k, v);
     }
-    w.empty("p:clrMap", a);
+    a
 }
 
 fn ext_list(w: &mut W, raw: Option<&str>) {
@@ -360,7 +377,7 @@ fn sanitized(p: &Presentation) -> std::borrow::Cow<'_, Presentation> {
     std::borrow::Cow::Owned(q)
 }
 
-pub fn export(p: &Presentation) -> Result<Vec<u8>, PptxError> {
+pub fn export(p: &Presentation, kind: crate::Package) -> Result<Vec<u8>, PptxError> {
     let p = sanitized(p);
     let p: &Presentation = &p;
     let mut x = Exp {
@@ -500,7 +517,7 @@ pub fn export(p: &Presentation) -> Result<Vec<u8>, PptxError> {
     let ts = crate::tables::table_styles_xml(&x.table_styles);
     x.pkg.xml_part("ppt/tableStyles.xml", CT_TABLE_STYLES, ts);
     let pxml = presentation_xml(&mut x, &mut pres, &master_rids, notes_master_rid.as_deref(), &slide_rids);
-    x.pkg.xml_part("ppt/presentation.xml", CT_PRES, pxml);
+    x.pkg.xml_part("ppt/presentation.xml", kind.content_type(), pxml);
     x.pkg.rels("ppt/presentation.xml", &pres.rels);
 
     // Document properties and package relationships.
@@ -522,9 +539,11 @@ fn layout_xml(x: &mut Exp, o: &mut Out, l: &Layout) -> Vec<u8> {
         A::new().o("showMasterSp", (!l.show_master_shapes).then_some("0")).a("type", l.kind.xml()).t("preserve", l.preserve),
     );
     csld(&mut w, x, o, &l.name, l.background.as_ref(), &l.shapes);
-    w.open0("p:clrMapOvr");
-    w.empty0("a:masterClrMapping");
-    w.close("p:clrMapOvr");
+    clr_map_ovr(&mut w, l.color_map.as_deref());
+    let hf = &x.p.header_footer;
+    if hf.hide_on_title && l.kind == deckcraft_model::LayoutType::Title && (hf.slide_number || hf.footer || hf.date) {
+        header_footer(&mut w, false, false, false);
+    }
     ext_list(&mut w, ext_children(l.raw_ext.as_deref()).as_deref());
     w.close("p:sldLayout");
     w.finish()
@@ -540,6 +559,10 @@ fn master_xml(x: &mut Exp, o: &mut Out, m: &Master, layouts: &[(u64, String)]) -
         w.empty("p:sldLayoutId", A::new().a("id", id).a("r:id", rid));
     }
     w.close("p:sldLayoutIdLst");
+    let hf = &x.p.header_footer;
+    if hf.slide_number || hf.footer || hf.date {
+        header_footer(&mut w, hf.slide_number, hf.footer, hf.date);
+    }
     w.open0("p:txStyles");
     let (dt, db, dother) = defaults::master_styles();
     let pick = |s: &deckcraft_model::text::ListStyle, d: deckcraft_model::text::ListStyle| if s.is_empty() { d } else { s.clone() };
@@ -556,9 +579,7 @@ fn slide_xml(x: &mut Exp, o: &mut Out, s: &Slide) -> Vec<u8> {
     let mut w = W::new();
     root_open(&mut w, "p:sld", A::new().o("showMasterSp", (!s.show_master_shapes).then_some("0")).o("show", s.hidden.then_some("0")));
     let ids = csld(&mut w, x, o, &s.name, s.background.as_ref(), &s.shapes);
-    w.open0("p:clrMapOvr");
-    w.empty0("a:masterClrMapping");
-    w.close("p:clrMapOvr");
+    clr_map_ovr(&mut w, None);
     if let Some(t) = &s.transition {
         timing::transition(&mut w, x, o, t);
     }
@@ -589,9 +610,7 @@ fn notes_xml(x: &mut Exp, o: &mut Out, notes: &TextBody) -> Vec<u8> {
         ..Default::default()
     };
     csld(&mut w, x, o, "", None, &[img, body]);
-    w.open0("p:clrMapOvr");
-    w.empty0("a:masterClrMapping");
-    w.close("p:clrMapOvr");
+    clr_map_ovr(&mut w, None);
     w.close("p:notes");
     w.finish()
 }

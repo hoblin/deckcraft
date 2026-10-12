@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use deckcraft_model::{Presentation, Shape, ShapeId, Slide, find_shape};
+use deckcraft_model::{Master, Presentation, Shape, ShapeId, Slide, find_shape};
 
 use crate::{DocState, Selection, Target, UiRequest};
 
@@ -105,8 +105,14 @@ fn document(old: &Presentation, new: &Presentation) -> Vec<String> {
         let which = if at.len() == new.slides.len() && at.len() > 1 { "every slide".into() } else { slides(&at) };
         said.push(format!("changed the {p} of {which}"));
     }
-    if old.masters.len() != new.masters.len() || old.masters.iter().zip(&new.masters).any(|(a, b)| !Arc::ptr_eq(a, b) && a != b) {
-        said.push("changed the slide masters, their layouts or the theme".into());
+    if old.masters.len() != new.masters.len() {
+        said.push("changed the slide masters".into());
+    } else {
+        for (mi, (a, b)) in old.masters.iter().zip(&new.masters).enumerate() {
+            if !Arc::ptr_eq(a, b) && a != b {
+                said.extend(master(mi, a, b));
+            }
+        }
     }
     let settings: Vec<&str> = [
         (old.slide_size != new.slide_size, "slide size"),
@@ -131,13 +137,60 @@ fn document(old: &Presentation, new: &Presentation) -> Vec<String> {
     said
 }
 
-fn slide(i: usize, old: &Slide, new: &Slide) -> (Vec<String>, String) {
-    let on = slides(&[i]);
+fn master(mi: usize, old: &Master, new: &Master) -> Vec<String> {
+    let on = place(Target::Master { master: mi }, 0);
+    let mut said = shape_changes(&on, &old.shapes, &new.shapes);
+    let parts = [
+        (old.theme != new.theme, "theme"),
+        (old.background != new.background, "background"),
+        (old.color_map != new.color_map, "colour map"),
+        (old.title_style != new.title_style, "title text style"),
+        (old.body_style != new.body_style, "body text style"),
+        (old.other_style != new.other_style, "other text style"),
+        (old.name != new.name, "name"),
+    ];
+    said.extend(changed_parts(&parts).map(|p| format!("changed the {p} of {on}")));
+    let ids = |m: &Master| m.layouts.iter().map(|l| l.id).collect::<Vec<_>>();
+    let (old_ids, new_ids) = (ids(old), ids(new));
+    for (li, l) in new.layouts.iter().enumerate() {
+        let at = place(Target::Layout { master: mi, layout: li }, 0);
+        let Some(o) = old.layouts.iter().find(|o| o.id == l.id) else {
+            said.push(format!("added {at}"));
+            continue;
+        };
+        if o == l {
+            continue;
+        }
+        said.extend(shape_changes(&at, &o.shapes, &l.shapes));
+        let parts = [
+            (o.name != l.name, "name"),
+            (o.background != l.background, "background"),
+            (o.show_master_shapes != l.show_master_shapes, "background graphics"),
+            (o.color_map != l.color_map, "colour map"),
+        ];
+        said.extend(changed_parts(&parts).map(|p| format!("changed the {p} of {at}")));
+    }
+    let deleted = old_ids.iter().filter(|id| !new_ids.contains(id)).count();
+    if deleted > 0 {
+        said.push(format!("deleted {deleted} layout{} of {on}", if deleted == 1 { "" } else { "s" }));
+    }
+    if said.is_empty() {
+        said.push(format!("changed {on}"));
+    }
+    said
+}
+
+fn changed_parts<'a>(parts: &'a [(bool, &'a str)]) -> impl Iterator<Item = String> + 'a {
+    let list: Vec<&str> = parts.iter().filter_map(|(changed, name)| changed.then_some(*name)).collect();
+    (!list.is_empty()).then(|| list.join(", ")).into_iter()
+}
+
+fn shape_changes(on: &str, old: &[Shape], new: &[Shape]) -> Vec<String> {
     let ids = |v: &[Shape]| v.iter().map(|s| s.id).collect::<Vec<_>>();
-    let (old_ids, new_ids) = (ids(&old.shapes), ids(&new.shapes));
+    let (old_ids, new_ids) = (ids(old), ids(new));
     let added: Vec<ShapeId> = new_ids.iter().copied().filter(|id| !old_ids.contains(id)).collect();
     let deleted: Vec<ShapeId> = old_ids.iter().copied().filter(|id| !new_ids.contains(id)).collect();
-    let changed: Vec<ShapeId> = new.shapes.iter().filter(|s| old.shapes.iter().any(|o| o.id == s.id && o != *s)).map(|s| s.id).collect();
+    let changed: Vec<ShapeId> = new.iter().filter(|s| old.iter().any(|o| o.id == s.id && o != *s)).map(|s| s.id).collect();
     let mut said = vec![];
     for (verb, list) in [("added", &added), ("deleted", &deleted), ("changed", &changed)] {
         if !list.is_empty() {
@@ -149,6 +202,11 @@ fn slide(i: usize, old: &Slide, new: &Slide) -> (Vec<String>, String) {
     if kept_old != kept_new {
         said.push(format!("reordered the shapes on {on}"));
     }
+    said
+}
+
+fn slide(i: usize, old: &Slide, new: &Slide) -> (Vec<String>, String) {
+    let said = shape_changes(&slides(&[i]), &old.shapes, &new.shapes);
     let parts = [
         (old.background != new.background, "background"),
         (old.transition != new.transition, "transition"),

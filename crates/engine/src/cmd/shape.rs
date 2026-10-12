@@ -229,6 +229,7 @@ fn change(s: &mut Session, p: &Value) -> Result<Value> {
     let info = deckcraft_geom::preset::info(name).ok_or_else(|| bad("shape.change", format!("unknown preset `{name}`")))?;
     edit_shapes(s, p, "shape.change", |sh| {
         sh.geom = Geom::preset(info.name);
+        sh.geom_set = sh.ph.is_some();
         Ok(())
     })
 }

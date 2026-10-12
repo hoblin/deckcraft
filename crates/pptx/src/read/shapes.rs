@@ -185,6 +185,7 @@ fn sp_pr(imp: &mut Imp, part: &Part, s: &mut Shape, pr: &El) {
     if let Some(x) = pr.child("xfrm") {
         s.xfrm = Some(dml::xfrm(x).0);
     }
+    s.geom_set = s.ph.is_some() && pr.child("prstGeom").or(pr.child("custGeom")).is_some();
     if let Some(pg) = pr.child("prstGeom") {
         s.geom = preset_geom(pg);
     } else if let Some(cg) = pr.child("custGeom") {

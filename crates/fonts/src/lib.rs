@@ -189,6 +189,60 @@ mod tests {
         assert!(feature("liga").is_some());
     }
 
+    fn name_table(names: &[(u16, &str)]) -> Vec<u8> {
+        let mut records = Vec::new();
+        let mut strings = Vec::new();
+        for (id, text) in names {
+            let utf16: Vec<u8> = text.encode_utf16().flat_map(u16::to_be_bytes).collect();
+            for v in [3u16, 1, 0x0409, *id, utf16.len() as u16, strings.len() as u16] {
+                records.extend(v.to_be_bytes());
+            }
+            strings.extend(utf16);
+        }
+        let mut table = Vec::new();
+        for v in [0u16, names.len() as u16, (6 + records.len()) as u16] {
+            table.extend(v.to_be_bytes());
+        }
+        table.extend(records);
+        table.extend(strings);
+        table
+    }
+
+    fn renamed(font: &[u8], names: &[(u16, &str)]) -> Vec<u8> {
+        let mut out = font.to_vec();
+        out.resize(out.len().next_multiple_of(4), 0);
+        let table = name_table(names);
+        let (at, len) = (out.len() as u32, table.len() as u32);
+        out.extend(table);
+        let tables = u16::from_be_bytes([out[4], out[5]]) as usize;
+        let record = (0..tables).map(|i| 12 + 16 * i).find(|r| &out[*r..*r + 4] == b"name").unwrap();
+        out[record + 8..record + 12].copy_from_slice(&at.to_be_bytes());
+        out[record + 12..record + 16].copy_from_slice(&len.to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn a_family_named_per_weight_answers_to_both_names() {
+        let dir = std::env::temp_dir().join(format!("deckcraft-per-weight-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (file, weight) in [("TestGothic-Bold.ttf", "Bold"), ("TestGothic-Light.ttf", "Light")] {
+            let legacy = format!("Test Gothic {weight}");
+            let names = [(1, legacy.as_str()), (2, "Regular"), (16, "Test Gothic"), (17, weight)];
+            std::fs::write(dir.join(file), renamed(epaint_default_fonts::UBUNTU_LIGHT, &names)).unwrap();
+        }
+        let style_linked = [(1, "Test Gothic"), (2, "Bold"), (16, "Test Gothic"), (17, "Bold")];
+        std::fs::write(dir.join("TestGothic-A.ttf"), renamed(epaint_default_fonts::UBUNTU_LIGHT, &style_linked)).unwrap();
+        let db = FontDb::with_font_dirs(vec![dir.clone()]);
+        db.set_system_fallback(false);
+        assert_eq!(db.face("Test Gothic", "Bold").family, "Test Gothic");
+        let by_weight_name = db.face("Test Gothic Bold", "Regular");
+        let by_family = db.face("Test Gothic", "Light");
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!((by_weight_name.family.as_str(), by_weight_name.style.as_str()), ("Test Gothic", "Bold"));
+        assert_eq!((by_family.family.as_str(), by_family.style.as_str()), ("Test Gothic", "Light"));
+        assert!(db.has_family("Test Gothic Light"));
+    }
+
     #[test]
     fn craft_fonts_latin_when_present() {
         if !CRAFT_FONTS.iter().any(|f| f.family == "Inter") {

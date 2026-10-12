@@ -337,7 +337,16 @@ fn shade(c: Rgba, m: FillMode) -> Rgba {
 
 /// Geometry of a shape at its size.
 pub fn shape_geometry(shape: &Shape, w: f64, h: f64) -> Geometry {
-    match &shape.geom {
+    geometry(&shape.geom, w, h)
+}
+
+/// Geometry of a shape at its size, a placeholder's taken from its layout or master.
+pub fn inherited_geometry(rctx: &Ctx, shape: &Shape, w: f64, h: f64) -> Geometry {
+    geometry(resolve::inherited_geom(rctx, shape).unwrap_or(&shape.geom), w, h)
+}
+
+fn geometry(geom: &Geom, w: f64, h: f64) -> Geometry {
+    match geom {
         Geom::Preset { name, adj } => preset::build(name, w, h, adj).or_else(|| preset::build("rect", w, h, &[])).unwrap_or(Geometry {
             paths: vec![],
             text_rect: Rect::new(0.0, 0.0, w, h),
@@ -455,7 +464,7 @@ impl Renderer {
         self.background(ctx, f, rctx, Some(slide), view);
         let (show_layout, show_master) = resolve::show_master_shapes(slide, rctx.layout);
         if show_master {
-            let mctx = Ctx::for_master(f.pres, rctx.master);
+            let mctx = rctx.master_graphics();
             for s in &rctx.master.shapes {
                 if s.ph.is_none() {
                     self.shape(ctx, f, &mctx, s, view, 0);
@@ -553,7 +562,7 @@ impl Renderer {
                     let c = Ctx::for_layout(pres, m, l);
                     self.background(&mut ctx, &f, &c, None, view);
                     if l.show_master_shapes {
-                        let mc = Ctx::for_master(pres, m);
+                        let mc = c.master_graphics();
                         for s in m.shapes.iter().filter(|s| s.ph.is_none()) {
                             self.shape(&mut ctx, &f, &mc, s, view, 0);
                         }
@@ -655,7 +664,7 @@ impl Renderer {
     fn geometry_shape(&mut self, ctx: &mut RenderContext, f: &Frame, rctx: &Ctx, s: &Shape, m: Affine, w: f64, h: f64, st: &ShapeState) {
         let (geo, fades) = match self.paths.iter().find(|p| p.id == s.id) {
             Some(pm) => morph_path::geometry(pm, s, w, h),
-            None => (shape_geometry(s, w, h), Vec::new()),
+            None => (inherited_geometry(rctx, s, w, h), Vec::new()),
         };
         let fade = |i: usize| fades.get(i).copied().unwrap_or(deckcraft_geom::morph::Fade { fill: 1.0, stroke: 1.0 });
         let (fill, fill_ph) = resolve::fill(rctx, s);

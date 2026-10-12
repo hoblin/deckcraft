@@ -1,6 +1,6 @@
 # Where DeckCraft falls short of PowerPoint
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (core-workflow alpha gate added; stage stays alpha; previous: major, first itemized gap list; full re-measure against PowerPoint for Mac 16.113.4 and the open GitHub issues) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (`.potx`/`.ppsx` content types landed; previous: minor, core-workflow alpha gate added; before that: major, first itemized gap list; full re-measure against PowerPoint for Mac 16.113.4 and the open GitHub issues) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
 
 Every known shortfall, one entry each, ranked by how much it stops someone who presents with
 PowerPoint from switching. This is the work list: pick from the top. Numbers are summarized in
@@ -84,13 +84,11 @@ Detail in [file-format-parity.md](file-format-parity.md).
 - **Estimate:** 8–14 h (an SVG renderer through `resvg`-style crates, an EMF/WMF record player for
   the common records). **Beta blocker** for EMF.
 
-### Template, slide-show and macro variants are saved as plain `.pptx`
-- **Evidence:** `crates/pptx/src/write/mod.rs` always writes the
-  `presentationml.presentation.main+xml` content type; `.potx`/`.ppsx` open, `.pptm`/`.potm`/`.ppsm`
-  aren't recognised.
-- **Impact:** a template saved as `.potx` isn't a template to PowerPoint; macro decks can't be
-  opened even to view.
-- **Estimate:** 2–4 h (content types; keep `vbaProject.bin` untouched without running it).
+### Macro-enabled variants aren't recognised
+- **Evidence:** `.pptx`, `.potx` and `.ppsx` open and save with their own content types;
+  `.pptm`/`.potm`/`.ppsm` aren't recognised.
+- **Impact:** macro decks can't be opened even to view.
+- **Estimate:** 1–3 h (content types; keep `vbaProject.bin` untouched without running it).
 
 ### No legacy `.ppt`/`.pot`/`.pps` import
 - **Evidence:** PowerPoint for Mac still opens and saves the 97–2003 binary formats
@@ -247,5 +245,6 @@ Detail in [localization-parity.md](localization-parity.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | `.potx` and `.ppsx` save with their own content types; the variants gap is down to macro-enabled files |
 | 2026-10-10 | minor | Noted that no gap blocks alpha (core-workflow gate passes) |
 | 2026-10-10 | major | Created: every gap from the 2026-10-10 re-measure and the 16 open GitHub issues, ranked, with beta blockers marked |

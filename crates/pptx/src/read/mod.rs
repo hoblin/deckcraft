@@ -30,6 +30,19 @@ pub struct Imp<'a> {
     pub next: u32,
     pub slide_by_part: HashMap<String, SlideId>,
     pub custom_show_names: HashMap<String, String>,
+    pub master_footers: Option<Footers>,
+    pub title_footers: Option<Footers>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Footers {
+    slide_number: bool,
+    footer: bool,
+    date: bool,
+}
+
+fn header_footer_flags(hf: &El) -> Footers {
+    Footers { slide_number: hf.bool("sldNum").unwrap_or(true), footer: hf.bool("ftr").unwrap_or(true), date: hf.bool("dt").unwrap_or(true) }
 }
 
 impl Imp<'_> {
@@ -230,6 +243,8 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
         next: max_id.max(1),
         slide_by_part: HashMap::new(),
         custom_show_names: HashMap::new(),
+        master_footers: None,
+        title_footers: None,
     };
     // Slide ids first so hyperlinks anywhere can point at slides.
     let mut slide_ids: Vec<(u32, String, SlideId)> = vec![];
@@ -387,7 +402,7 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
         p.props.company = d.root.child("Company").map(|c| c.text()).unwrap_or_default();
     }
 
-    p.header_footer = header_footer(&p);
+    p.header_footer = header_footer(&p, imp.master_footers, imp.title_footers);
     p.media = std::mem::take(&mut imp.media);
     p.next_id = imp.next;
     p.fix_next_id();
@@ -457,6 +472,9 @@ fn read_master(imp: &mut Imp, path: &str, doc: &Doc, docs: &HashMap<String, Doc>
     if m.name.is_empty() {
         m.name = m.theme.name.clone();
     }
+    if imp.master_footers.is_none() {
+        imp.master_footers = root.child("hf").map(header_footer_flags);
+    }
     if let Some(ts) = root.child("txStyles") {
         if let Some(s) = ts.child("titleStyle") {
             m.title_style = dml::list_style(imp, &part, s);
@@ -522,6 +540,12 @@ fn read_layout(imp: &mut Imp, part: &Part, doc: &Doc) -> Layout {
             let mut ctx = shapes::IdCtx::default();
             l.shapes = shapes::sp_tree(imp, part, &mut ctx, tree, 0);
         }
+    }
+    l.color_map = root.path(&["clrMapOvr", "overrideClrMapping"]).map(color_map);
+    if l.kind == LayoutType::Title
+        && let Some(hf) = root.child("hf")
+    {
+        imp.title_footers = Some(header_footer_flags(hf));
     }
     if let Some(ext) = root.child("extLst").filter(|e| !has_rel_refs(e)) {
         l.raw_ext = Some(ext.elements().map(|e| part.keep(e)).collect());
@@ -667,32 +691,33 @@ fn read_core(root: &El, p: &mut Properties) {
     }
 }
 
-/// Which footer placeholders the slides show.
-fn header_footer(p: &Presentation) -> HeaderFooter {
+/// The header and footer settings: the master's `p:hf` and the footer placeholders the slides
+/// show, "not on the title slide" from the title layout's `p:hf`, and the footer and fixed date
+/// text of the slides, else of the master.
+fn header_footer(p: &Presentation, master: Option<Footers>, title: Option<Footers>) -> HeaderFooter {
     let mut hf = HeaderFooter::default();
-    for s in &p.slides {
-        for sh in &s.shapes {
-            match sh.ph_type() {
-                Some(PhType::SlideNum) => hf.slide_number = true,
-                Some(PhType::Date) => {
-                    hf.date = true;
-                    if let Some(t) = &sh.text
-                        && !t.paragraphs.iter().flat_map(|p| &p.runs).any(|r| matches!(r.kind, deckcraft_model::text::RunKind::Field { .. }))
-                        && hf.date_text.is_empty()
-                    {
-                        hf.date_text = t.text();
-                    }
-                }
-                Some(PhType::Footer) => {
-                    hf.footer = true;
-                    if hf.footer_text.is_empty()
-                        && let Some(t) = &sh.text
-                    {
-                        hf.footer_text = t.text();
-                    }
-                }
-                _ => {}
-            }
+    if let Some(f) = master {
+        hf.slide_number = f.slide_number;
+        hf.footer = f.footer;
+        hf.date = f.date;
+        hf.hide_on_title = title.is_some_and(|t| !(t.slide_number || t.footer || t.date));
+    }
+    for sh in p.slides.iter().flat_map(|s| &s.shapes) {
+        match sh.ph_type() {
+            Some(PhType::SlideNum) => hf.slide_number = true,
+            Some(PhType::Date) => hf.date = true,
+            Some(PhType::Footer) => hf.footer = true,
+            _ => {}
+        }
+    }
+    let master_shapes = p.masters.first().map(|m| m.shapes.as_slice()).unwrap_or_default();
+    for sh in p.slides.iter().flat_map(|s| &s.shapes).chain(master_shapes) {
+        let Some(t) = &sh.text else { continue };
+        let fixed = || !t.paragraphs.iter().flat_map(|p| &p.runs).any(|r| matches!(r.kind, deckcraft_model::text::RunKind::Field { .. }));
+        match sh.ph_type() {
+            Some(PhType::Date) if hf.date_text.is_empty() && fixed() => hf.date_text = t.text(),
+            Some(PhType::Footer) if hf.footer_text.is_empty() => hf.footer_text = t.text(),
+            _ => {}
         }
     }
     hf

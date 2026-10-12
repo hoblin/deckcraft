@@ -10,7 +10,7 @@ use crate::{Result, Session};
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "document.inspect", "Inspect Presentation", [], None, "{} → slides with titles, layouts, shape counts; selection; size; theme", has_doc, document),
-        cmd!(query "slide.inspect", "Inspect Slide", [], None, "{index?} → the slide's shapes with ids, kinds, boxes, text, fills, animations, transition, notes", has_doc, slide),
+        cmd!(query "slide.inspect", "Inspect Slide", [], None, "{index?} → the slide's shapes with ids, kinds, boxes, text, fills, animations, transition, notes (in Slide Master view without `index`: the slide master or layout being edited)", has_doc, slide),
         cmd!(query "shape.inspect", "Inspect Shape", [], None, "{id} → full shape JSON plus its effective box", has_doc, shape),
         cmd!(query "commands.list", "List Commands", [], None, "{filter?: substring} → [{id, label, params, enabled}]", always, commands),
     ]
@@ -67,7 +67,7 @@ pub fn shape_summary(ctx: Option<&Ctx>, sh: &Shape, depth: usize) -> Value {
         if let Some(p) = &sh.ph {
             o.insert("placeholder".into(), json!(p.kind.xml()));
         }
-        if let Some(n) = sh.geom.preset_name()
+        if let Some(n) = ctx.and_then(|c| resolve::inherited_geom(c, sh)).unwrap_or(&sh.geom).preset_name()
             && matches!(sh.kind, ShapeKind::Shape | ShapeKind::Connector { .. })
         {
             o.insert("preset".into(), json!(n));
@@ -109,16 +109,51 @@ fn round(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
+fn background(ctx: &Ctx, slide: Option<&deckcraft_model::Slide>) -> Value {
+    match resolve::background(ctx, slide) {
+        (deckcraft_model::Fill::Solid { color }, ph) => json!(format!("#{}", ctx.color(&color, ph).hex())),
+        (f, _) => serde_json::to_value(&f).ok().and_then(|v| v.get("kind").cloned()).unwrap_or_default(),
+    }
+}
+
+fn template(st: &crate::DocState, master: usize, layout: Option<usize>) -> Result<Value> {
+    let m = st.doc.masters.get(master).ok_or_else(|| bad("slide.inspect", none_at("slide master", master, st.doc.masters.len())))?;
+    let Some(li) = layout else {
+        let ctx = Ctx::for_master(&st.doc, m);
+        return Ok(json!({
+            "slideMaster": master,
+            "name": m.name,
+            "theme": m.theme.name,
+            "background": background(&ctx, None),
+            "shapes": m.shapes.iter().map(|sh| shape_summary(Some(&ctx), sh, 0)).collect::<Vec<_>>(),
+            "layouts": m.layouts.iter().map(|l| l.name.clone()).collect::<Vec<_>>(),
+        }));
+    };
+    let l = m.layouts.get(li).ok_or_else(|| bad("slide.inspect", none_at(&format!("layout of slide master {master}"), li, m.layouts.len())))?;
+    let ctx = Ctx::for_layout(&st.doc, m, l);
+    Ok(json!({
+        "slideMaster": master,
+        "layout": li,
+        "id": l.id,
+        "name": l.name,
+        "background": background(&ctx, None),
+        "hideBackgroundGraphics": !l.show_master_shapes,
+        "shapes": l.shapes.iter().map(|sh| shape_summary(Some(&ctx), sh, 0)).collect::<Vec<_>>(),
+    }))
+}
+
 fn slide(s: &mut Session, p: &Value) -> Result<Value> {
     let st = s.doc()?;
+    match (st.selection.target, usize_param(p, "index")) {
+        (crate::Target::Master { master }, None) => return template(st, master, None),
+        (crate::Target::Layout { master, layout }, None) => return template(st, master, Some(layout)),
+        _ => {}
+    }
     let i = usize_param(p, "index").unwrap_or(st.selection.slide);
     let sl = st.doc.slides.get(i).ok_or_else(|| bad("slide.inspect", none_at("slide", i, st.doc.slides.len())))?;
     let ctx = Ctx::for_slide(&st.doc, sl);
     let shapes: Vec<Value> = sl.shapes.iter().map(|sh| shape_summary(ctx.as_ref(), sh, 0)).collect();
-    let bg = ctx.as_ref().map(|c| match resolve::background(c, Some(sl)) {
-        (deckcraft_model::Fill::Solid { color }, ph) => json!(format!("#{}", c.color(&color, ph).hex())),
-        (f, _) => serde_json::to_value(&f).ok().and_then(|v| v.get("kind").cloned()).unwrap_or_default(),
-    });
+    let bg = ctx.as_ref().map(|c| background(c, Some(sl)));
     Ok(json!({
         "index": i,
         "id": sl.id,

@@ -63,6 +63,9 @@ pub struct FontFace {
     id: u32,
     /// Typographic family name (e.g. "Source Sans 3").
     pub family: String,
+    /// Family name ID 1, which some fonts give each weight ("Supera Gothic Bold"); PowerPoint on
+    /// Windows names fonts by it, so lookups answer to it too.
+    pub legacy_family: String,
     /// Typographic style name (e.g. "Semibold", "Italic").
     pub style: String,
     /// usWeightClass-style weight (400 = regular).
@@ -145,6 +148,9 @@ impl std::fmt::Debug for FontFace {
 }
 
 impl FontFace {
+    pub fn named(&self, family: &str) -> bool {
+        self.family.eq_ignore_ascii_case(family) || self.legacy_family.eq_ignore_ascii_case(family)
+    }
     pub fn data(&self) -> &[u8] {
         match &self.bytes {
             FontBytes::Static(b) => b,
@@ -225,8 +231,16 @@ impl FontFace {
 #[derive(Clone, Debug)]
 struct CatalogEntry {
     family: String,
+    legacy_family: String,
     style: String,
     path: std::path::PathBuf,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl CatalogEntry {
+    fn named(&self, family: &str) -> bool {
+        self.family.eq_ignore_ascii_case(family) || self.legacy_family.eq_ignore_ascii_case(family)
+    }
 }
 
 /// Process-wide font database.
@@ -291,18 +305,27 @@ fn name(font: &skrifa::FontRef<'_>, ids: &[StringId]) -> Option<String> {
     ids.iter().find_map(|id| font.localized_strings(*id).english_or_first().map(|s| s.to_string()).filter(|s| !s.is_empty()))
 }
 
-/// A face's family and style names (the default instance's style for a variable font).
-fn face_names(f: &skrifa::FontRef<'_>) -> Option<(String, String)> {
+/// A face's family, per-weight family and style names (the default instance's style for a
+/// variable font).
+fn face_names(f: &skrifa::FontRef<'_>) -> Option<Names> {
     let family = name(f, &[StringId::TYPOGRAPHIC_FAMILY_NAME, StringId::FAMILY_NAME])?;
+    let legacy_family = name(f, &[StringId::FAMILY_NAME]).unwrap_or_else(|| family.clone());
     let style = name(f, &[StringId::TYPOGRAPHIC_SUBFAMILY_NAME, StringId::SUBFAMILY_NAME]).unwrap_or_else(|| "Regular".into());
-    Some((family, style))
+    Some(Names { family, legacy_family, style })
 }
 
-/// (family, style) of every face in the font file at `path`, reading only its table directories
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Names {
+    family: String,
+    legacy_family: String,
+    style: String,
+}
+
+/// The names of every face in the font file at `path`, reading only its table directories
 /// and `name` tables: a scan opens hundreds of font files, many of them megabytes long. A
 /// variable font is cataloged under its default style; its named instances appear once it loads.
 #[cfg(not(target_arch = "wasm32"))]
-fn file_face_names(path: &std::path::Path) -> Vec<(String, String)> {
+fn file_face_names(path: &std::path::Path) -> Vec<Names> {
     use std::io::{Read, Seek, SeekFrom};
     /// Caps on what a (possibly damaged) file can make the scan read.
     const MAX_FACES: u32 = 256;
@@ -387,9 +410,9 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
-/// One face found in a font file: index, family, style and (variable fonts) the named instance's
-/// axis settings.
-type Found = (u32, String, String, Vec<([u8; 4], f32)>);
+/// One face found in a font file: index, names and (variable fonts) the named instance's axis
+/// settings.
+type Found = (u32, Names, Vec<([u8; 4], f32)>);
 
 /// Parse every face in `data` (a font file or collection); a variable font yields one face per
 /// named instance (InDesign lists them as styles).
@@ -402,7 +425,7 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
     let mut out = Vec::new();
     for i in 0..count {
         let Ok(f) = skrifa::FontRef::from_index(data, i) else { continue };
-        let Some((family, style)) = face_names(&f) else { continue };
+        let Some(names) = face_names(&f) else { continue };
         let axes = f.axes();
         let mut named = Vec::new();
         for ni in f.named_instances().iter() {
@@ -414,9 +437,9 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
             named.push((i, style, coords));
         }
         if named.is_empty() {
-            out.push((i, family, style, Vec::new()));
+            out.push((i, names, Vec::new()));
         } else {
-            out.extend(named.into_iter().map(|(i, s, c)| (i, family.clone(), s, c)));
+            out.extend(named.into_iter().map(|(i, style, c)| (i, Names { style, ..names.clone() }, c)));
         }
     }
     out
@@ -426,17 +449,19 @@ fn enumerate_faces(data: &[u8]) -> Vec<Found> {
 pub(crate) fn last_resort_face() -> Arc<FontFace> {
     static FACE: std::sync::OnceLock<Arc<FontFace>> = std::sync::OnceLock::new();
     FACE.get_or_init(|| {
+        let names = Names { family: LAST_RESORT_FAMILY.into(), legacy_family: LAST_RESORT_FAMILY.into(), style: "Regular".into() };
         // The font is compiled in (`include_bytes!`), so parsing it can't depend on input; the
         // `last_resort_face_parses` test proves it on every run.
         #[allow(clippy::expect_used)]
-        let face = make_face(FontBytes::Static(epaint_default_fonts::UBUNTU_LIGHT), 0, LAST_RESORT_FAMILY.into(), "Regular".into(), Vec::new())
-            .expect("the compiled-in last-resort face parses");
+        let face =
+            make_face(FontBytes::Static(epaint_default_fonts::UBUNTU_LIGHT), 0, names, Vec::new()).expect("the compiled-in last-resort face parses");
         Arc::new(face)
     })
     .clone()
 }
 
-fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
+fn make_face(bytes: FontBytes, index: u32, names: Names, coords: Vec<([u8; 4], f32)>) -> Option<FontFace> {
+    let Names { family, legacy_family, style } = names;
     let data: &[u8] = match &bytes {
         FontBytes::Static(b) => b,
         FontBytes::Owned(v) => v.as_slice(),
@@ -459,6 +484,7 @@ fn make_face(bytes: FontBytes, index: u32, family: String, style: String, coords
     Some(FontFace {
         id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
         family,
+        legacy_family,
         style,
         weight,
         italic,
@@ -519,8 +545,8 @@ impl FontDb {
     pub fn with_font_dirs(font_dirs: Vec<std::path::PathBuf>) -> Self {
         let mut faces = Vec::new();
         for data in bundled() {
-            for (i, family, style, coords) in enumerate_faces(data) {
-                if let Some(f) = make_face(FontBytes::Static(data), i, family, style, coords) {
+            for (i, names, coords) in enumerate_faces(data) {
+                if let Some(f) = make_face(FontBytes::Static(data), i, names, coords) {
                     faces.push(Arc::new(f));
                 }
             }
@@ -602,11 +628,15 @@ impl FontDb {
     pub fn add_font(&self, bytes: Vec<u8>) -> usize {
         let data = Arc::new(bytes);
         let mut added = 0;
-        for (i, family, style, coords) in enumerate_faces(&data) {
-            if self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(&family) && f.style.eq_ignore_ascii_case(&style)) {
+        for (i, names, coords) in enumerate_faces(&data) {
+            if self.read_faces().iter().any(|f| {
+                f.family.eq_ignore_ascii_case(&names.family)
+                    && f.style.eq_ignore_ascii_case(&names.style)
+                    && f.legacy_family.eq_ignore_ascii_case(&names.legacy_family)
+            }) {
                 continue;
             }
-            if let Some(f) = make_face(FontBytes::Owned(data.clone()), i, family, style, coords) {
+            if let Some(f) = make_face(FontBytes::Owned(data.clone()), i, names, coords) {
                 self.faces.write().unwrap_or_else(|e| e.into_inner()).push(Arc::new(f));
                 added += 1;
             }
@@ -666,8 +696,8 @@ impl FontDb {
                 if !matches!(ext.as_deref(), Some("ttf" | "otf" | "ttc" | "otc")) {
                     continue;
                 }
-                for (family, style) in file_face_names(&p) {
-                    found.push(CatalogEntry { family, style, path: p.clone() });
+                for Names { family, legacy_family, style } in file_face_names(&p) {
+                    found.push(CatalogEntry { family, legacy_family, style, path: p.clone() });
                 }
             }
         }
@@ -682,7 +712,8 @@ impl FontDb {
     fn load_cataloged(&self, family: &str) -> bool {
         let paths: Vec<std::path::PathBuf> = {
             let cat = self.read_catalog();
-            let mut p: Vec<_> = cat.iter().filter(|c| c.family.eq_ignore_ascii_case(family)).map(|c| c.path.clone()).collect();
+            let families: Vec<&str> = cat.iter().filter(|c| c.named(family)).map(|c| c.family.as_str()).collect();
+            let mut p: Vec<_> = cat.iter().filter(|c| families.iter().any(|f| c.family.eq_ignore_ascii_case(f))).map(|c| c.path.clone()).collect();
             p.sort();
             p.dedup();
             p
@@ -738,14 +769,14 @@ impl FontDb {
             return true;
         }
         #[cfg(not(target_arch = "wasm32"))]
-        if self.read_catalog().iter().any(|c| c.family.eq_ignore_ascii_case(family)) {
+        if self.read_catalog().iter().any(|c| c.named(family)) {
             return true;
         }
         false
     }
 
     pub(crate) fn is_loaded(&self, family: &str) -> bool {
-        self.read_faces().iter().any(|f| f.family.eq_ignore_ascii_case(family))
+        self.read_faces().iter().any(|f| f.named(family))
     }
 
     /// A variable font's axes: (tag, name, min, default, max), empty for static fonts.
@@ -783,7 +814,8 @@ impl FontDb {
                 None => coords.push((tag, v)),
             }
         }
-        let f = make_face(base.bytes.clone(), base.index, base.family.clone(), style.to_string(), coords)?;
+        let names = Names { family: base.family.clone(), legacy_family: base.legacy_family.clone(), style: style.to_string() };
+        let f = make_face(base.bytes.clone(), base.index, names, coords)?;
         let f = Arc::new(f);
         self.faces.write().unwrap_or_else(|e| e.into_inner()).push(f.clone());
         Some(f)
@@ -793,14 +825,14 @@ impl FontDb {
         if style.contains('{') {
             {
                 let faces = self.read_faces();
-                if let Some(f) = faces.iter().find(|f| f.family.eq_ignore_ascii_case(family) && f.style == style) {
+                if let Some(f) = faces.iter().find(|f| f.named(family) && f.style == style) {
                     return Some(f.clone());
                 }
             }
             return self.instance(family, style);
         }
         let faces = self.read_faces();
-        let cands: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.family.eq_ignore_ascii_case(family)).collect();
+        let cands: Vec<&Arc<FontFace>> = faces.iter().filter(|f| f.named(family)).collect();
         if cands.is_empty() {
             return None;
         }
@@ -871,7 +903,7 @@ impl FontDb {
             }
             let Ok(data) = std::fs::read(&p) else { continue };
             let hit =
-                enumerate_faces(&data).iter().any(|(i, _, _, _)| skrifa::FontRef::from_index(&data, *i).is_ok_and(|f| f.charmap().map(c).is_some()));
+                enumerate_faces(&data).iter().any(|(i, _, _)| skrifa::FontRef::from_index(&data, *i).is_ok_and(|f| f.charmap().map(c).is_some()));
             if hit && self.add_font(data) > 0 && covered(self) {
                 return true;
             }

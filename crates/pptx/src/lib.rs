@@ -51,7 +51,46 @@ pub fn import(bytes: &[u8]) -> Result<Presentation, PptxError> {
 
 /// Write a `.pptx` package.
 pub fn export(p: &Presentation) -> Result<Vec<u8>, PptxError> {
-    write::export(p)
+    write::export(p, Package::Presentation)
+}
+
+/// Write a `.pptx`, `.potx` or `.ppsx` package.
+pub fn export_as(p: &Presentation, kind: Package) -> Result<Vec<u8>, PptxError> {
+    write::export(p, kind)
+}
+
+/// The kinds of PresentationML package; only the main part's content type tells them apart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Package {
+    #[default]
+    Presentation,
+    Template,
+    Show,
+}
+
+impl Package {
+    pub fn for_extension(ext: &str) -> Option<Package> {
+        match ext.to_ascii_lowercase().as_str() {
+            "pptx" => Some(Package::Presentation),
+            "potx" => Some(Package::Template),
+            "ppsx" => Some(Package::Show),
+            _ => None,
+        }
+    }
+    pub fn extension(self) -> &'static str {
+        match self {
+            Package::Presentation => "pptx",
+            Package::Template => "potx",
+            Package::Show => "ppsx",
+        }
+    }
+    pub(crate) fn content_type(self) -> &'static str {
+        match self {
+            Package::Presentation => "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+            Package::Template => "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml",
+            Package::Show => "application/vnd.openxmlformats-officedocument.presentationml.slideshow.main+xml",
+        }
+    }
 }
 
 /// Content type for a file name's extension.

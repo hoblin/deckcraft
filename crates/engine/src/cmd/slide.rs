@@ -120,6 +120,7 @@ fn new(s: &mut Session, p: &Value) -> Result<Value> {
         // Inherit the section of the slide before.
         let section = at.checked_sub(1).and_then(|i| doc.slides.get(i)).and_then(|prev| doc.section_of(prev.id));
         doc.slides.insert(at, Arc::new(slide));
+        super::design::place_footers(doc, at, false);
         if let Some(si) = section
             && let Some(sec) = doc.sections.get_mut(si)
         {
@@ -451,6 +452,7 @@ fn reset(s: &mut Session, p: &Value) -> Result<Value> {
                     sh.line = None;
                     sh.effects = None;
                     sh.geom = Default::default();
+                    sh.geom_set = false;
                     if let Some(t) = sh.text.as_mut() {
                         t.body = Default::default();
                         t.list_style = Default::default();

@@ -57,7 +57,7 @@ Open P0 items: Start screen (new, templates/themes, recent), Contextual tabs (Sh
 | Files | Native file format (open/save) | P0 | D |
 | Files | Open PowerPoint .pptx | P0 | D |
 | Files | Save as PowerPoint .pptx | P0 | D |
-| Files | Open/save .potx/.ppsx/.pptm variants (.potx/.ppsx open; saved with the .pptx content type; no .pptm) | P2 | P |
+| Files | Open/save .potx/.ppsx/.pptm variants (.potx/.ppsx open and save with their own content types; no .pptm) | P2 | P |
 | Files | Legacy .ppt (binary) import | P2 | M |
 | Files | Save as template | P1 | D |
 | Files | Autosave and crash recovery | P0 | D |

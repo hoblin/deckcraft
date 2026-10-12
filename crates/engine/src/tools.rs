@@ -1266,7 +1266,7 @@ pub fn text_pos(st: &crate::DocState, sh: &Shape, p: Point) -> (usize, usize) {
     match cmd::text::layout_for(st, &t) {
         Some(l) => {
             // The text's own transform: flips don't mirror text, vertical text is turned.
-            let tr = deckcraft_render::shape_geometry(sh, x.w, x.h).text_rect;
+            let tr = cmd::text::text_rect(st, sh, x.w, x.h);
             let local = deckcraft_render::text_transform(x.affine(), tr, l.rotation).inverse() * p;
             let h = l.hit(local);
             (h.para, h.ch)

@@ -213,7 +213,7 @@ fn sp_pr(w: &mut W, x: &mut Exp, o: &mut Out, s: &Shape, geom: bool) {
     if let Some(xf) = &s.xfrm {
         dml::xfrm(w, "a:xfrm", xf, None);
     }
-    if geom && (s.xfrm.is_some() || s.ph.is_none() || !matches!(&s.geom, Geom::Preset { name, adj } if name == "rect" && adj.is_empty())) {
+    if geom && !(s.ph.is_some() && s.geom.is_plain_rect() && !s.geom_set && matches!(s.kind, ShapeKind::Shape)) {
         geometry(w, &s.geom);
     }
     if let Some(f) = &s.fill {

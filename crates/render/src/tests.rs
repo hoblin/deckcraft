@@ -20,6 +20,29 @@ fn blank_slide_renders_white_background() {
 }
 
 #[test]
+fn a_slide_placeholder_takes_the_shape_of_its_layout_placeholder() {
+    let mut p = Presentation::default();
+    let layout = &mut std::sync::Arc::make_mut(&mut p.masters[0]).layouts[0];
+    let subtitle = layout.shapes.iter_mut().find(|s| s.ph_type() == Some(deckcraft_model::PhType::SubTitle)).unwrap();
+    subtitle.geom = Geom::preset("roundRect");
+    subtitle.fill = Some(deckcraft_model::Fill::solid(ColorRef::rgb(deckcraft_color::Rgba::BLACK)));
+    let x = subtitle.xfrm.unwrap();
+    let img = render_slide(&p, 0, &RenderOpts { scale: 1.0, ..Default::default() });
+    assert_eq!(img.pixel(x.x as u32 + 1, x.y as u32 + 1), [255, 255, 255, 255]);
+    assert_eq!(img.pixel((x.x + x.w / 2.0) as u32, (x.y + x.h / 2.0) as u32), [0, 0, 0, 255]);
+}
+
+#[test]
+fn a_layout_colour_map_turns_its_slides_dark() {
+    let mut p = Presentation::default();
+    let layout = &mut std::sync::Arc::make_mut(&mut p.masters[0]).layouts[0];
+    layout.color_map = Some(vec![("bg1".into(), "dk1".into()), ("tx1".into(), "lt1".into())]);
+    let dark = p.masters[0].theme.colors.get(deckcraft_color::SchemeSlot::Dk1);
+    let img = render_slide(&p, 0, &RenderOpts { scale: 0.25, ..Default::default() });
+    assert_eq!(img.pixel(5, 5), [dark.r, dark.g, dark.b, 255]);
+}
+
+#[test]
 fn shape_fill_uses_theme_accent() {
     let sh = Shape {
         id: ShapeId(500),

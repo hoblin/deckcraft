@@ -240,10 +240,9 @@ pub fn build_master(size: Size, theme: Theme, first_id: u32) -> (Master, u32) {
             name: name.into(),
             kind,
             shapes,
-            background: None,
             show_master_shapes: true,
             preserve: true,
-            raw_ext: None,
+            ..Default::default()
         });
     };
 

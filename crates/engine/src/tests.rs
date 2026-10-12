@@ -725,6 +725,267 @@ fn a_call_that_returns_nothing_says_what_changed() {
     assert_eq!(said(&mut s, "design.background", json!({"color": "#445566", "all": true})), "changed the background of slide index 1");
 }
 
+fn template() -> Session {
+    let mut s = Session::new();
+    s.execute("file.new", &json!({"blank": true})).unwrap();
+    s
+}
+
+fn placeholder(s: &Session, kind: deckcraft_model::PhType) -> u64 {
+    s.doc().unwrap().shapes().iter().find(|sh| sh.ph_type() == Some(kind)).unwrap().id.0.into()
+}
+
+fn slide_title_state(s: &mut Session) -> serde_json::Value {
+    let title = placeholder(s, deckcraft_model::PhType::Title);
+    s.execute("edit.select", &json!({"ids": [title]})).unwrap();
+    s.execute("format.state", &json!({})).unwrap()
+}
+
+#[test]
+fn formatting_a_master_placeholder_sets_the_text_style_slides_inherit() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let title = placeholder(&s, PhType::Title);
+    s.execute("edit.select", &json!({"ids": [title]})).unwrap();
+    assert_eq!(said(&mut s, "format.size", json!({"size": 30})), "changed the title text style of slide master 0");
+    s.execute("format.bold", &json!({"on": true})).unwrap();
+    let master = &s.doc().unwrap().doc.masters[0];
+    let style = master.title_style.level(0).unwrap();
+    assert_eq!((style.run.size, style.run.bold), (Some(30.0), Some(true)));
+    let prompt = master.shapes.iter().find(|sh| sh.ph_type() == Some(PhType::Title)).unwrap();
+    assert!(prompt.text.as_ref().unwrap().paragraphs.iter().flat_map(|p| &p.runs).all(|r| r.props.size.is_none()));
+
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent", "title": "Q3"})).unwrap();
+    let state = slide_title_state(&mut s);
+    assert_eq!((state["size"].as_f64(), state["bold"].as_bool()), (Some(30.0), Some(true)), "{state}");
+}
+
+#[test]
+fn formatting_a_layout_placeholder_sets_the_style_its_slides_inherit() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let title = placeholder(&s, PhType::Title);
+    s.execute("edit.select", &json!({"ids": [title]})).unwrap();
+    assert_eq!(said(&mut s, "format.font", json!({"family": "Supera Gothic"})), format!("changed shape {title} on layout 1 of slide master 0"));
+    s.execute("format.alignCenter", &json!({})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent", "title": "Q3"})).unwrap();
+    let state = slide_title_state(&mut s);
+    assert_eq!((state["font"].as_str(), state["align"].as_str()), (Some("Supera Gothic"), Some("ctr")), "{state}");
+}
+
+#[test]
+fn indenting_in_a_master_placeholder_still_moves_its_paragraphs() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let body = placeholder(&s, deckcraft_model::PhType::Body);
+    s.execute("text.edit", &json!({"id": body, "at": [0, 0]})).unwrap();
+    s.execute("format.indent", &json!({})).unwrap();
+    let st = s.doc().unwrap();
+    assert_eq!(st.shape(deckcraft_model::ShapeId(body as u32)).unwrap().text.as_ref().unwrap().paragraphs[0].level, 1);
+}
+
+#[test]
+fn naming_the_slide_master_opens_it_even_beside_slides() {
+    let mut s = session();
+    assert_eq!(said(&mut s, "view.slideMaster", json!({"master": 0})), r#"{"kind":"master","master":0}"#);
+    assert_eq!(said(&mut s, "view.slideMaster", json!({})), r#"{"kind":"layout","layout":0,"master":0}"#);
+}
+
+#[test]
+fn a_layout_can_hide_the_slide_master_graphics() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 2})).unwrap();
+    assert_eq!(said(&mut s, "design.hideBackgroundGraphics", json!({"hide": true})), "changed the background graphics of layout 2 of slide master 0");
+    assert!(!s.doc().unwrap().doc.masters[0].layouts[2].show_master_shapes);
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    assert_eq!(
+        said(&mut s, "design.hideBackgroundGraphics", json!({"hide": true})),
+        "invalid parameters for `design.hideBackgroundGraphics`: a slide master's graphics are its own; view.slideMaster {\"master\": 0, \
+         \"layout\": index} selects one of its layouts. `design.hideBackgroundGraphics` takes {hide?: bool}."
+    );
+}
+
+#[test]
+fn a_layout_takes_placeholders_of_every_kind_powerpoint_has() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    s.execute("master.insertLayout", &json!({"name": "Cover"})).unwrap();
+    let mut add = |p: serde_json::Value| s.execute("master.insertPlaceholder", &p).unwrap()["id"].as_u64().unwrap();
+    let subtitle = add(json!({"kind": "subtitle", "rect": [80, 300, 800, 60], "prompt": "Add the quarter"}));
+    let number = add(json!({"kind": "slideNumber"}));
+    let footer = add(json!({"kind": "footer", "prompt": "Bondata"}));
+    let date = add(json!({"kind": "date"}));
+    let st = s.doc().unwrap();
+    let shape = |id: u64| st.shape(deckcraft_model::ShapeId(id as u32)).unwrap();
+    let ph = |id: u64| shape(id).ph.clone().unwrap();
+    assert_eq!((ph(subtitle).kind, ph(subtitle).has_custom_prompt), (PhType::SubTitle, true));
+    assert_eq!(shape(subtitle).text.as_ref().unwrap().text(), "Add the quarter");
+    assert_eq!((ph(number).kind, shape(number).xfrm), (PhType::SlideNum, None));
+    assert!(shape(number).name.starts_with("Slide Number Placeholder "));
+    assert_eq!((ph(footer).kind, ph(footer).has_custom_prompt), (PhType::Footer, false));
+    assert_eq!(shape(footer).text.as_ref().unwrap().text(), "Bondata");
+    assert_eq!(ph(date).kind, PhType::Date);
+    assert!(said(&mut s, "master.insertPlaceholder", json!({"kind": "logo"})).starts_with(
+        "invalid parameters for `master.insertPlaceholder`: no placeholder kind `logo`; the kinds are content, text, picture, chart, \
+         table, media, title, subtitle, date, footer, slideNumber."
+    ));
+}
+
+#[test]
+fn typing_into_a_layout_placeholder_makes_it_the_prompt() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("text.set", &json!({"id": content, "text": "Three points, no more"})).unwrap();
+    let st = s.doc().unwrap();
+    assert!(st.shape(deckcraft_model::ShapeId(content as u32)).unwrap().ph.as_ref().unwrap().has_custom_prompt);
+}
+
+#[test]
+fn new_slides_carry_the_footers_the_template_turns_on() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("design.headerFooter", &json!({"slideNumber": true, "footerText": "Bondata", "hideOnTitle": true})).unwrap();
+    let master_footer = s.doc().unwrap().doc.masters[0].shapes.iter().find(|sh| sh.ph_type() == Some(PhType::Footer)).cloned().unwrap();
+    assert_eq!(master_footer.text.unwrap().text(), "Bondata");
+    s.execute("slide.new", &json!({"layout": "title"})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let st = s.doc().unwrap();
+    let kinds = |i: usize| st.doc.slides[i].shapes.iter().filter_map(|sh| sh.ph_type()).filter(|k| k.is_footer_kind()).collect::<Vec<_>>();
+    assert_eq!(kinds(0), []);
+    assert_eq!(kinds(1), [PhType::Footer, PhType::SlideNum]);
+    let footer = st.doc.slides[1].shapes.iter().find(|sh| sh.ph_type() == Some(PhType::Footer)).unwrap();
+    assert_eq!(footer.text.as_ref().unwrap().text(), "Bondata");
+}
+
+#[test]
+fn a_dark_background_style_on_a_layout_turns_its_text_light() {
+    use deckcraft_color::SchemeSlot;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 2})).unwrap();
+    assert_eq!(said(&mut s, "design.background", json!({"style": 4})), "changed the background, colour map of layout 2 of slide master 0");
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "sectionHeader"})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let st = s.doc().unwrap();
+    let theme = &st.doc.masters[0].theme.colors;
+    let text = |i: usize| {
+        let ctx = deckcraft_model::resolve::Ctx::for_slide(&st.doc, &st.doc.slides[i]).unwrap();
+        (ctx.color(&deckcraft_model::ColorRef::scheme(SchemeSlot::Tx1), None), deckcraft_model::resolve::background(&ctx, Some(&st.doc.slides[i])))
+    };
+    let (dark_text, (dark_bg, ph)) = text(0);
+    assert_eq!(dark_text, theme.get(SchemeSlot::Lt1));
+    assert_eq!(ph, Some(theme.get(SchemeSlot::Dk1)), "{dark_bg:?}");
+    assert_eq!(text(1).0, theme.get(SchemeSlot::Dk1));
+}
+
+#[test]
+fn a_light_style_on_a_layout_stays_light_under_a_dark_master() {
+    use deckcraft_color::SchemeSlot;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    s.execute("design.background", &json!({"style": 4})).unwrap();
+    s.execute("design.background", &json!({"reset": true})).unwrap();
+    assert!(!s.doc().unwrap().doc.masters[0].color_map.is_empty());
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    s.execute("design.background", &json!({"style": 1})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let st = s.doc().unwrap();
+    let ctx = deckcraft_model::resolve::Ctx::for_slide(&st.doc, &st.doc.slides[0]).unwrap();
+    let theme = &st.doc.masters[0].theme.colors;
+    assert_eq!(ctx.color(&deckcraft_model::ColorRef::scheme(SchemeSlot::Tx1), None), theme.get(SchemeSlot::Dk1));
+}
+
+#[test]
+fn clearing_formatting_in_master_view_leaves_the_text_styles() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let title = placeholder(&s, deckcraft_model::PhType::Title);
+    s.execute("edit.select", &json!({"ids": [title]})).unwrap();
+    let before = s.doc().unwrap().doc.masters[0].title_style.clone();
+    s.execute("format.clear", &json!({})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.masters[0].title_style, before);
+}
+
+#[test]
+fn a_slide_placeholder_set_to_a_rectangle_stays_one() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("shape.change", &json!({"ids": [content], "preset": "roundRect"})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let on_slide = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("shape.change", &json!({"ids": [on_slide], "preset": "rect"})).unwrap();
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    let presets: Vec<&str> = v["shapes"].as_array().unwrap().iter().filter_map(|sh| sh["preset"].as_str()).collect();
+    assert_eq!(presets, ["rect", "rect"], "{v}");
+}
+
+#[test]
+fn a_layout_has_one_footer_placeholder_of_each_kind() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let footer = placeholder(&s, deckcraft_model::PhType::Footer);
+    assert_eq!(
+        said(&mut s, "master.insertPlaceholder", json!({"kind": "footer"})),
+        format!(
+            "invalid parameters for `master.insertPlaceholder`: layout 1 already has its footer placeholder, shape {footer}. \
+             `master.insertPlaceholder` takes {}.",
+            find_command("master.insertPlaceholder").unwrap().params
+        )
+    );
+}
+
+#[test]
+fn slide_inspect_in_master_view_inspects_the_layout_or_master() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    assert_eq!((v["layout"].as_u64(), v["name"].as_str()), (Some(1), Some("Title and Content")), "{v}");
+    let ids: Vec<u64> = v["shapes"].as_array().unwrap().iter().filter_map(|sh| sh["id"].as_u64()).collect();
+    assert_eq!(ids.len(), 5, "{v}");
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    assert_eq!((v["slideMaster"].as_u64(), v["layout"].as_u64()), (Some(0), None), "{v}");
+    assert_eq!(
+        said(&mut s, "slide.inspect", json!({"index": 0})),
+        "invalid parameters for `slide.inspect`: no slide at index 0; there are none. `slide.inspect` takes {index?} → the slide's shapes with \
+         ids, kinds, boxes, text, fills, animations, transition, notes (in Slide Master view without `index`: the slide master or layout being \
+         edited)."
+    );
+}
+
+#[test]
+fn slides_take_the_shape_of_their_layout_placeholders() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("shape.change", &json!({"ids": [content], "preset": "roundRect"})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    let presets: Vec<&str> = v["shapes"].as_array().unwrap().iter().filter_map(|sh| sh["preset"].as_str()).collect();
+    assert_eq!(presets, ["rect", "roundRect"], "{v}");
+}
+
+#[test]
+fn save_template_writes_a_potx_only() {
+    let mut s = template();
+    assert_eq!(
+        said(&mut s, "file.saveTemplate", json!({"path": "/tmp/brand.pptx"})),
+        "invalid parameters for `file.saveTemplate`: a template is a .potx file, and `/tmp/brand.pptx` isn't one. `file.saveTemplate` takes \
+         {path: .potx}."
+    );
+    assert_eq!(cmd::file::format_for_path("Brand.POTX"), "potx");
+}
+
 #[test]
 fn an_index_out_of_range_names_the_range() {
     let mut s = session();

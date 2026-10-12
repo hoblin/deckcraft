@@ -415,7 +415,7 @@ fn overlays(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf: Xf, t: &To
     {
         let x = deckcraft_engine::cmd::xfrm_of(&st.doc, &st.selection, sh);
         // Where the text is drawn: flips don't mirror it, vertical text is turned.
-        let tr = deckcraft_render::shape_geometry(sh, x.w, x.h).text_rect;
+        let tr = deckcraft_engine::cmd::text::text_rect(st, sh, x.w, x.h);
         let m = deckcraft_render::text_transform(x.affine(), tr, l.rotation);
         let (s0, s1) = ts.ordered();
         for r in l.selection_rects(deckcraft_text::Pos { para: s0.0, ch: s0.1 }, deckcraft_text::Pos { para: s1.0, ch: s1.1 }) {

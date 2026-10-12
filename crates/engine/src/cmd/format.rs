@@ -7,7 +7,7 @@ use deckcraft_model::text::{Align, Anchor, AutoFit, Bullet, Caps, ParaProps, Run
 use deckcraft_model::{Effects, Fill, Line, Shape};
 use serde_json::{Value, json};
 
-use super::text::{format_body, format_para, format_run};
+use super::text::{format_body, format_para, format_paragraphs, format_run, format_runs};
 use super::*;
 use crate::{Result, Session};
 
@@ -294,7 +294,7 @@ fn spacing(s: &mut Session, p: &Value) -> Result<Value> {
     format_run(s, &move |r| r.spacing = Some(v))
 }
 fn clear(s: &mut Session, _p: &Value) -> Result<Value> {
-    format_run(s, &|r| *r = RunProps { lang: r.lang.clone(), link: r.link.clone(), ..Default::default() })
+    format_runs(s, &|r| *r = RunProps { lang: r.lang.clone(), link: r.link.clone(), ..Default::default() })
 }
 fn text_shadow(s: &mut Session, p: &Value) -> Result<Value> {
     let v = on_param(p, Some(current_run(s).shadow.is_some()));
@@ -447,7 +447,7 @@ fn numbering(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn level(s: &mut Session, d: i32) -> Result<Value> {
-    format_para(s, &move |p| {
+    format_paragraphs(s, &move |p| {
         let l = (p.level as i32 + d).clamp(0, 8) as u8;
         // Explicit indents shift with the level.
         if l != p.level {
@@ -609,10 +609,10 @@ fn painter_apply(s: &mut Session, p: &Value) -> Result<Value> {
     }
     if s.doc()?.selection.text.as_ref().is_some_and(|t| t.is_range()) && ids_param(p, "ids").is_none() {
         if let Some(r) = painted.run.clone() {
-            format_run(s, &move |rp| *rp = r.clone())?;
+            format_runs(s, &move |rp| *rp = r.clone())?;
         }
         if let Some(pp) = painted.para.clone() {
-            format_para(s, &move |para| para.props = pp.clone())?;
+            format_paragraphs(s, &move |para| para.props = pp.clone())?;
         }
         return ok();
     }

@@ -7,7 +7,7 @@ use deckcraft_model::{Presentation, Shape, ShapeKind};
 use deckcraft_text::{Opts, TextLayout};
 use kurbo::{Affine, Rect};
 
-use crate::{SlideFields, shape_geometry, table};
+use crate::{SlideFields, inherited_geometry, table};
 
 /// One shape's text as drawn on the slide.
 pub struct PlacedText {
@@ -38,7 +38,7 @@ pub fn place_slide(pres: &Presentation, index: usize) -> Placed {
     let fields = SlideFields::new(pres.slide_number(index), pres.header_footer.footer_text.clone(), &crate::RenderOpts::default());
     let (show_layout, show_master) = resolve::show_master_shapes(slide, rctx.layout);
     if show_master {
-        let mctx = Ctx::for_master(pres, rctx.master);
+        let mctx = rctx.master_graphics();
         for s in rctx.master.shapes.iter().filter(|s| s.ph.is_none()) {
             place(&mut out, &mctx, &fields, s, Affine::IDENTITY, 0);
         }
@@ -87,7 +87,7 @@ fn place(out: &mut Placed, rctx: &Ctx, fields: &SlideFields, s: &Shape, parent: 
         ShapeKind::Chart(_) | ShapeKind::Ink { .. } => {}
         _ => {
             let Some(body) = s.text.as_ref().filter(|b| !b.is_empty()) else { return };
-            let tr = shape_geometry(s, x.w, x.h).text_rect;
+            let tr = inherited_geometry(rctx, s, x.w, x.h).text_rect;
             place_text(out, rctx, fields, s, body, tr, m);
         }
     }
