@@ -42,7 +42,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Header and Footer…",
             ["Insert", "Text"],
             None,
-            "{date?: bool, dateText?: fixed text, slideNumber?: bool, footer?: bool, footerText?, hideOnTitle?: bool, all?: bool (default true)}",
+            "{date?: bool, dateText?: fixed text, slideNumber?: bool, footer?: bool, footerText?, hideOnTitle?: bool, all?: bool (default true)} (with all, footerText and dateText also go into the footer and date placeholders of every slide master and layout)",
             has_doc,
             header_footer
         ),
@@ -363,8 +363,9 @@ fn header_footer(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// Give slide `i` the date, footer and slide number placeholders the header and footer settings
-/// turn on, and only those.
-pub(crate) fn place_footers(doc: &mut Presentation, i: usize, date_given: bool) {
+/// turn on, and only those, with the footer text; with `fix_date`, its date placeholder takes the
+/// settings' date too.
+pub(crate) fn place_footers(doc: &mut Presentation, i: usize, fix_date: bool) {
     const KINDS: [PhType; 3] = [PhType::Date, PhType::Footer, PhType::SlideNum];
     let hf = doc.header_footer.clone();
     let Some(layout) = doc.slides.get(i).map(|x| x.layout) else { return };
@@ -398,7 +399,7 @@ pub(crate) fn place_footers(doc: &mut Presentation, i: usize, date_given: bool) 
     for sh in &mut sl.shapes {
         match sh.ph_type() {
             Some(PhType::Footer) => sh.text = Some(TextBody::from_text(&hf.footer_text)),
-            Some(PhType::Date) if date_given => set_date(sh, &hf.date_text),
+            Some(PhType::Date) if fix_date => set_date(sh, &hf.date_text),
             _ => {}
         }
     }
@@ -431,7 +432,7 @@ fn set_paragraphs(sh: &mut Shape, body: TextBody) {
     sh.text = Some(TextBody { paragraphs: body.paragraphs, ..sh.text.clone().unwrap_or_default() });
 }
 
-/// Point a slide's date placeholder at a fixed date (its own plain text) or, for an empty
+/// Point a date placeholder at a fixed date (its own plain text) or, for an empty
 /// `fixed`, at an automatic date field (one it already has keeps its format).
 fn set_date(sh: &mut Shape, fixed: &str) {
     let runs = || sh.text.iter().flat_map(|t| &t.paragraphs).flat_map(|p| &p.runs);

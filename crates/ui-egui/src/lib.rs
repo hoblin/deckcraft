@@ -426,11 +426,15 @@ impl SlideApp {
 
     pub fn save_as_dialog(&mut self, format: &str) {
         let name = self.session.active().map(|d| d.title()).unwrap_or_else(|| "Presentation".into());
-        let ext = if format == "pptx" { "pptx" } else { "deckcraft" };
+        let (ext, cmd) = match format {
+            "pptx" => ("pptx", "file.saveAs"),
+            "potx" => ("potx", "file.saveTemplate"),
+            _ => ("deckcraft", "file.saveAs"),
+        };
         let suggested = format!("{name}.{ext}");
         if let Some(pick) = self.services.pick_save.as_mut() {
             if let Some(path) = pick(&suggested) {
-                match self.session.execute("file.saveAs", &json!({"path": path})) {
+                match self.session.execute(cmd, &json!({"path": path})) {
                     Ok(_) => {
                         self.set_status(format!("Saved {path}"));
                         self.ui.recent.retain(|p| *p != path);
@@ -486,11 +490,11 @@ impl SlideApp {
                 UiRequest::Pane { id } => self.ui.pane = Some(id),
                 UiRequest::StartShow { from } => self.start_show(from, false),
                 UiRequest::Message { text } => self.set_status(text),
-                UiRequest::PickFile { purpose } => {
-                    if purpose == "saveAs" {
-                        self.save_as_dialog("deckcraft");
-                    }
-                }
+                UiRequest::PickFile { purpose } => match purpose.as_str() {
+                    "saveAs" => self.save_as_dialog("deckcraft"),
+                    "saveTemplate" => self.save_as_dialog("potx"),
+                    _ => {}
+                },
                 UiRequest::Media { action, shape, ms } => {
                     let owner = if self.show.is_some() { media::Owner::Show } else { media::Owner::Editor };
                     if let Some(doc) = self.session.active().map(|d| d.doc.clone()) {

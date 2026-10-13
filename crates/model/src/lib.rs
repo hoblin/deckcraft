@@ -323,8 +323,8 @@ pub struct Shape {
     pub xfrm: Option<Xfrm>,
     pub kind: ShapeKind,
     pub geom: Geom,
-    /// A placeholder's geometry is its own, even a plain rectangle; otherwise it takes its
-    /// layout's or master's.
+    /// True when a placeholder's plain-rectangle geometry is its own; false lets it take a
+    /// non-rectangular geometry from its layout or master.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub geom_set: bool,
     pub ph: Option<Placeholder>,

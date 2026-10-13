@@ -258,14 +258,27 @@ fn step(cur: f64, up: bool) -> f64 {
 
 fn grow_shrink(s: &mut Session, up: bool) -> Result<Value> {
     // Each run steps from its own size, like PowerPoint.
-    let st = s.doc()?;
-    let ctx_sizes = current_run(s).size.unwrap_or(18.0);
-    let _ = st;
-    let base = ctx_sizes;
-    format_run(s, &move |r| {
+    let sizes = level_sizes(s);
+    if super::text::format_style(s, &move |level, ls| {
+        if let Some(cur) = sizes.get(usize::from(level)).copied().flatten().or(ls.run.size) {
+            ls.run.size = Some(step(cur, up));
+        }
+    })? {
+        return ok();
+    }
+    let base = current_run(s).size.unwrap_or(18.0);
+    format_runs(s, &move |r| {
         let cur = r.size.unwrap_or(base);
         r.size = Some(step(cur, up));
     })
+}
+
+fn level_sizes(s: &Session) -> Vec<Option<f64>> {
+    let Ok(st) = s.doc() else { return vec![] };
+    let Some(ctx) = super::text::ctx_for(&st.doc, &st.selection) else { return vec![] };
+    let id = st.selection.text.as_ref().map(|t| t.shape).or_else(|| st.selection.shapes.first().copied());
+    let Some(shape) = id.and_then(|id| st.shape(id)) else { return vec![] };
+    (0..9).map(|level| resolve::run(&ctx, shape, &deckcraft_model::Paragraph { level, ..Default::default() }, &RunProps::default()).size).collect()
 }
 fn grow(s: &mut Session, _p: &Value) -> Result<Value> {
     grow_shrink(s, true)

@@ -594,8 +594,9 @@ fn a_params_doc_spells_out_each_parameter() {
 
 #[test]
 fn a_command_not_available_names_only_keys_it_takes() {
+    let fresh = Session::with_new();
     for c in command_specs() {
-        let Err(reason) = (c.enabled)(&Session::with_new()) else { continue };
+        let Err(reason) = (c.enabled)(&fresh) else { continue };
         let keys = cmd::param_keys(c.params).unwrap();
         let err = EngineError::Disabled(c.id.into(), reason).to_string();
         assert!(!err.contains("`ids`") || keys.contains(&"ids"), "{err}");
@@ -655,9 +656,13 @@ fn a_call_refuses_parameters_the_command_does_not_take() {
         said(&mut s, "slide.new", json!([1]))
             .starts_with("invalid parameters for `slide.new`: parameters are a JSON object, not an array. `slide.new` takes {layout?: ")
     );
-    assert_eq!(s.doc().unwrap().current_slide().unwrap().shapes.len(), 2);
+    assert_eq!(s.doc().unwrap().current_slide().unwrap().shapes.len(), 2, "a refused call inserts nothing");
     let id = insert(&mut s, "Hi");
     assert_eq!(said(&mut s, "shape.resize", json!({"id": id, "w": 50})), format!("changed shape {id} on slide index 0"));
+    assert_eq!(
+        said(&mut s, "shape.inspect", json!({"ids": [id]})),
+        "`shape.inspect` was given `ids`, which it doesn't take. `shape.inspect` takes {id} → full shape JSON plus its effective box."
+    );
 }
 
 #[test]
@@ -722,7 +727,11 @@ fn a_call_that_returns_nothing_says_what_changed() {
     s.call("slide.new", &json!({})).unwrap();
     assert_eq!(said(&mut s, "design.background", json!({"color": "#445566", "all": true})), "changed the background of every slide");
     assert_eq!(said(&mut s, "design.background", json!({"reset": true, "index": 1})), "changed the background of slide index 1");
-    assert_eq!(said(&mut s, "design.background", json!({"color": "#445566", "all": true})), "changed the background of slide index 1");
+    assert_eq!(
+        said(&mut s, "design.background", json!({"color": "#445566", "all": true})),
+        "changed the background of slide index 1",
+        "only the slide that was reset changes"
+    );
 }
 
 fn template() -> Session {
@@ -769,12 +778,12 @@ fn formatting_a_layout_placeholder_sets_the_style_its_slides_inherit() {
     s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
     let title = placeholder(&s, PhType::Title);
     s.execute("edit.select", &json!({"ids": [title]})).unwrap();
-    assert_eq!(said(&mut s, "format.font", json!({"family": "Supera Gothic"})), format!("changed shape {title} on layout 1 of slide master 0"));
+    assert_eq!(said(&mut s, "format.font", json!({"family": "Acme Sans"})), format!("changed shape {title} on layout 1 of slide master 0"));
     s.execute("format.alignCenter", &json!({})).unwrap();
     s.execute("view.closeMaster", &json!({})).unwrap();
     s.execute("slide.new", &json!({"layout": "titleAndContent", "title": "Q3"})).unwrap();
     let state = slide_title_state(&mut s);
-    assert_eq!((state["font"].as_str(), state["align"].as_str()), (Some("Supera Gothic"), Some("ctr")), "{state}");
+    assert_eq!((state["font"].as_str(), state["align"].as_str()), (Some("Acme Sans"), Some("ctr")), "{state}");
 }
 
 #[test]
@@ -810,7 +819,7 @@ fn a_layout_can_hide_the_slide_master_graphics() {
 }
 
 #[test]
-fn a_layout_takes_placeholders_of_every_kind_powerpoint_has() {
+fn a_layout_takes_title_subtitle_date_footer_and_slide_number_placeholders() {
     use deckcraft_model::PhType;
     let mut s = template();
     s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
@@ -818,7 +827,7 @@ fn a_layout_takes_placeholders_of_every_kind_powerpoint_has() {
     let mut add = |p: serde_json::Value| s.execute("master.insertPlaceholder", &p).unwrap()["id"].as_u64().unwrap();
     let subtitle = add(json!({"kind": "subtitle", "rect": [80, 300, 800, 60], "prompt": "Add the quarter"}));
     let number = add(json!({"kind": "slideNumber"}));
-    let footer = add(json!({"kind": "footer", "prompt": "Bondata"}));
+    let footer = add(json!({"kind": "footer", "prompt": "Acme"}));
     let date = add(json!({"kind": "date"}));
     let st = s.doc().unwrap();
     let shape = |id: u64| st.shape(deckcraft_model::ShapeId(id as u32)).unwrap();
@@ -828,7 +837,7 @@ fn a_layout_takes_placeholders_of_every_kind_powerpoint_has() {
     assert_eq!((ph(number).kind, shape(number).xfrm), (PhType::SlideNum, None));
     assert!(shape(number).name.starts_with("Slide Number Placeholder "));
     assert_eq!((ph(footer).kind, ph(footer).has_custom_prompt), (PhType::Footer, false));
-    assert_eq!(shape(footer).text.as_ref().unwrap().text(), "Bondata");
+    assert_eq!(shape(footer).text.as_ref().unwrap().text(), "Acme");
     assert_eq!(ph(date).kind, PhType::Date);
     assert!(said(&mut s, "master.insertPlaceholder", json!({"kind": "logo"})).starts_with(
         "invalid parameters for `master.insertPlaceholder`: no placeholder kind `logo`; the kinds are content, text, picture, chart, \
@@ -850,9 +859,9 @@ fn typing_into_a_layout_placeholder_makes_it_the_prompt() {
 fn new_slides_carry_the_footers_the_template_turns_on() {
     use deckcraft_model::PhType;
     let mut s = template();
-    s.execute("design.headerFooter", &json!({"slideNumber": true, "footerText": "Bondata", "hideOnTitle": true})).unwrap();
+    s.execute("design.headerFooter", &json!({"slideNumber": true, "footerText": "Acme", "hideOnTitle": true})).unwrap();
     let master_footer = s.doc().unwrap().doc.masters[0].shapes.iter().find(|sh| sh.ph_type() == Some(PhType::Footer)).cloned().unwrap();
-    assert_eq!(master_footer.text.unwrap().text(), "Bondata");
+    assert_eq!(master_footer.text.unwrap().text(), "Acme");
     s.execute("slide.new", &json!({"layout": "title"})).unwrap();
     s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
     let st = s.doc().unwrap();
@@ -860,7 +869,21 @@ fn new_slides_carry_the_footers_the_template_turns_on() {
     assert_eq!(kinds(0), []);
     assert_eq!(kinds(1), [PhType::Footer, PhType::SlideNum]);
     let footer = st.doc.slides[1].shapes.iter().find(|sh| sh.ph_type() == Some(PhType::Footer)).unwrap();
-    assert_eq!(footer.text.as_ref().unwrap().text(), "Bondata");
+    assert_eq!(footer.text.as_ref().unwrap().text(), "Acme");
+}
+
+#[test]
+fn slides_from_an_outline_carry_the_footers_too() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("design.headerFooter", &json!({"slideNumber": true, "footerText": "Acme"})).unwrap();
+    s.execute("slide.fromOutline", &json!({"text": "Q3\n\tRevenue\nQ4\n\tCosts"})).unwrap();
+    let st = s.doc().unwrap();
+    assert_eq!(st.doc.slides.len(), 2);
+    for sl in &st.doc.slides {
+        let kinds: Vec<_> = sl.shapes.iter().filter_map(|sh| sh.ph_type()).filter(|k| k.is_footer_kind()).collect();
+        assert_eq!(kinds, [PhType::Footer, PhType::SlideNum]);
+    }
 }
 
 #[test]
@@ -976,6 +999,39 @@ fn slides_take_the_shape_of_their_layout_placeholders() {
 }
 
 #[test]
+fn a_layout_set_back_to_a_rectangle_stays_one_under_a_rounded_master() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let body = placeholder(&s, PhType::Body);
+    s.execute("shape.change", &json!({"ids": [body], "preset": "roundRect"})).unwrap();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, PhType::Obj);
+    s.execute("shape.change", &json!({"ids": [content], "preset": "rect"})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    let presets: Vec<&str> = v["shapes"].as_array().unwrap().iter().filter_map(|sh| sh["preset"].as_str()).collect();
+    assert_eq!(presets, ["rect", "rect"], "{v}");
+}
+
+#[test]
+fn growing_a_layout_placeholder_steps_each_level_from_its_own_size() {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("edit.select", &json!({"ids": [content]})).unwrap();
+    let st = s.doc().unwrap();
+    let before: Vec<f64> = (0..3).map(|l| st.doc.masters[0].body_style.level(l).unwrap().run.size.unwrap()).collect();
+    s.execute("format.grow", &json!({})).unwrap();
+    let st = s.doc().unwrap();
+    let style = &st.shape(deckcraft_model::ShapeId(content as u32)).unwrap().text.as_ref().unwrap().list_style;
+    let after: Vec<f64> = (0..3).map(|l| style.level(l).unwrap().run.size.unwrap()).collect();
+    assert!(after.iter().zip(&before).all(|(a, b)| a > b), "{before:?} → {after:?}");
+    assert!(after[0] > after[1] && after[1] > after[2], "{after:?}");
+}
+
+#[test]
 fn save_template_writes_a_potx_only() {
     let mut s = template();
     assert_eq!(
@@ -984,6 +1040,9 @@ fn save_template_writes_a_potx_only() {
          {path: .potx}."
     );
     assert_eq!(cmd::file::format_for_path("Brand.POTX"), "potx");
+    s.ui_requests.clear();
+    s.execute("file.saveTemplate", &json!({})).unwrap();
+    assert!(matches!(s.ui_requests.as_slice(), [crate::UiRequest::PickFile { purpose }] if purpose == "saveTemplate"), "{:?}", s.ui_requests);
 }
 
 #[test]

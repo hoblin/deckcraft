@@ -63,7 +63,7 @@ pub struct FontFace {
     id: u32,
     /// Typographic family name (e.g. "Source Sans 3").
     pub family: String,
-    /// Family name ID 1, which some fonts give each weight ("Supera Gothic Bold"); PowerPoint on
+    /// Family name ID 1, which some fonts give each weight ("Acme Sans Bold"); PowerPoint on
     /// Windows names fonts by it, so lookups answer to it too.
     pub legacy_family: String,
     /// Typographic style name (e.g. "Semibold", "Italic").
@@ -712,7 +712,9 @@ impl FontDb {
     fn load_cataloged(&self, family: &str) -> bool {
         let paths: Vec<std::path::PathBuf> = {
             let cat = self.read_catalog();
-            let families: Vec<&str> = cat.iter().filter(|c| c.named(family)).map(|c| c.family.as_str()).collect();
+            let mut families: Vec<&str> = cat.iter().filter(|c| c.named(family)).map(|c| c.family.as_str()).collect();
+            families.sort_unstable();
+            families.dedup();
             let mut p: Vec<_> = cat.iter().filter(|c| families.iter().any(|f| c.family.eq_ignore_ascii_case(f))).map(|c| c.path.clone()).collect();
             p.sort();
             p.dedup();

@@ -1,6 +1,6 @@
 # DeckCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (created from the code on main at d556ff9; AGENTS.md §4 keeps the rules) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (outside callers go through `Session::call`; previous: major, created from the code on main at d556ff9; AGENTS.md §4 keeps the rules) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
 
 How DeckCraft is built today. The binding rules (layering, everything is a command, thin UI, never
 break wasm, never crash) are in [AGENTS.md](../AGENTS.md) §3–§5; this document describes what
@@ -42,7 +42,9 @@ Animation Pane shows, rebuilt into PowerPoint's timing tree on save.
 Every user-visible action is a `CommandSpec` (id, label, ribbon/menu place, shortcut, params doc,
 `enabled`, `run`) in `crates/engine/src/cmd/*`. The UI, `deckcraft-cli run`, the JSON control
 channel (`deckcraft --control PORT`, [control-protocol.md](control-protocol.md)) and MCP
-([mcp.md](mcp.md)) all dispatch through `Session::execute`, so they behave identically.
+([mcp.md](mcp.md)) all run the same commands, so they behave identically. The UI calls
+`Session::execute`; the CLI, control channel and MCP call `Session::call`, which also refuses
+parameters a command doesn't take and answers in words what a command changed.
 Programmatic calls never open dialogs. Pointer gestures go through `Session::pointer`, keys through
 `Session::key`.
 
@@ -74,4 +76,5 @@ macOS, Windows, Linux, FreeBSD and web artifacts.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | The CLI, control channel and MCP go through `Session::call` |
 | 2026-10-10 | major | Created from the code on main (d556ff9) and AGENTS.md §4 |

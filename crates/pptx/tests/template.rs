@@ -19,7 +19,7 @@ fn brand_template() -> Presentation {
     run(&mut s, "view.slideMaster", json!({"master": 0}));
     let title = placeholder(&s, PhType::Title);
     run(&mut s, "edit.select", json!({"ids": [title]}));
-    run(&mut s, "format.font", json!({"family": "Supera Gothic Bold"}));
+    run(&mut s, "format.font", json!({"family": "Acme Sans Bold"}));
     run(&mut s, "view.slideMaster", json!({"layout": 2}));
     run(&mut s, "design.hideBackgroundGraphics", json!({"hide": true}));
     run(&mut s, "design.background", json!({"style": 4}));
@@ -30,7 +30,7 @@ fn brand_template() -> Presentation {
     run(&mut s, "view.slideMaster", json!({"layout": 6}));
     run(&mut s, "master.insertPlaceholder", json!({"kind": "subtitle", "rect": [80, 300, 800, 60], "prompt": "Add the quarter"}));
     run(&mut s, "view.closeMaster", json!({}));
-    run(&mut s, "design.headerFooter", json!({"slideNumber": true, "footerText": "Bondata", "hideOnTitle": true}));
+    run(&mut s, "design.headerFooter", json!({"slideNumber": true, "footerText": "Acme", "hideOnTitle": true}));
     s.doc().expect("doc").doc.as_ref().clone()
 }
 
@@ -40,7 +40,7 @@ fn main_content_type(bytes: &[u8]) -> String {
     zip.by_name("[Content_Types].xml").expect("content types").read_to_string(&mut xml).expect("read");
     let at = xml.find("PartName=\"/ppt/presentation.xml\"").expect("presentation override");
     let tail = &xml[at..];
-    let ct = &tail[tail.find("ContentType=\"").expect("content type") + 13..];
+    let ct = &tail[tail.find("ContentType=\"").expect("content type") + "ContentType=\"".len()..];
     ct[..ct.find('"').expect("quote")].to_string()
 }
 
@@ -102,12 +102,23 @@ fn a_template_saves_with_the_template_content_type() {
 }
 
 #[test]
+fn save_template_writes_a_template_file() {
+    let path = std::env::temp_dir().join(format!("dc-template-{}.potx", std::process::id()));
+    let mut s = Session::new();
+    run(&mut s, "file.new", json!({"blank": true}));
+    run(&mut s, "file.saveTemplate", json!({"path": path.to_str().expect("path")}));
+    let bytes = std::fs::read(&path).expect("saved");
+    std::fs::remove_file(&path).expect("remove");
+    assert_eq!(main_content_type(&bytes), "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml");
+}
+
+#[test]
 fn a_template_keeps_what_its_author_set() {
     let p = brand_template();
     let bytes = deckcraft_pptx::export_as(&p, deckcraft_pptx::Package::Template).expect("export");
     let q = deckcraft_pptx::import(&bytes).expect("import");
     let (pm, qm) = (&p.masters[0], &q.masters[0]);
-    assert_eq!(qm.title_style.level(0).and_then(|l| l.run.font.as_deref()), Some("Supera Gothic Bold"));
+    assert_eq!(qm.title_style.level(0).and_then(|l| l.run.font.as_deref()), Some("Acme Sans Bold"));
     assert!(!qm.layouts[2].show_master_shapes);
     assert_eq!(qm.layouts[2].color_map.as_ref().map(|m| m.iter().find(|(k, _)| k == "tx1").map(|(_, v)| v.as_str())), Some(Some("lt1")));
     assert_eq!(qm.layouts[1].color_map, None);
@@ -120,7 +131,7 @@ fn a_template_keeps_what_its_author_set() {
         (q.header_footer.slide_number, q.header_footer.footer, q.header_footer.date, q.header_footer.hide_on_title),
         (true, true, false, true)
     );
-    assert_eq!(q.header_footer.footer_text, "Bondata");
+    assert_eq!(q.header_footer.footer_text, "Acme");
     assert_eq!(pm.layouts.len(), qm.layouts.len());
 }
 

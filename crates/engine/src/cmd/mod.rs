@@ -34,8 +34,10 @@ pub struct CommandSpec {
     /// Where it lives: `["Home", "Font"]` (ribbon tab and group) or `["Arrange"]` (menu).
     pub menu: &'static [&'static str],
     pub shortcut: Option<&'static str>,
-    /// Also the keys [`Session::call`] accepts, read by [`param_keys`]: a spaced ` | ` separates
-    /// alternative keys, so alternative values are written unspaced (`ms|null`).
+    /// The parameters as `describe` and `commands` show them, and the keys [`Session::call`]
+    /// accepts, read by `parse_params` and `param_keys`: `?` marks an optional key, a spaced ` | `
+    /// separates alternative sets of keys (so alternative values are written unspaced, `ms|null`),
+    /// `(…)` is a remark and `→` starts the answer.
     pub params: &'static str,
     pub enabled: Enabled,
     pub run: Run,
@@ -56,6 +58,7 @@ pub struct CommandInfo {
 }
 
 impl CommandSpec {
+    /// Holds because `Session::execute` skips the selection check when `id` or `ids` is given.
     pub fn acts_on(&self) -> Option<String> {
         self.acts_on_for(&(self.enabled)(&Session::with_new()).err()?)
     }
@@ -97,12 +100,14 @@ impl CommandSpec {
 pub fn always(_: &Session) -> std::result::Result<(), String> {
     Ok(())
 }
+pub const NO_PRESENTATION: &str = "no presentation open";
+pub const NO_SLIDES: &str = "no slides";
 pub fn has_doc(s: &Session) -> std::result::Result<(), String> {
-    s.active().map(|_| ()).ok_or_else(|| "no presentation open".into())
+    s.active().map(|_| ()).ok_or_else(|| NO_PRESENTATION.into())
 }
 pub fn has_slide(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
-    if s.active().is_some_and(|d| !d.doc.slides.is_empty() || d.selection.target != crate::Target::Slides) { Ok(()) } else { Err("no slides".into()) }
+    if s.active().is_some_and(|d| !d.doc.slides.is_empty() || d.selection.target != crate::Target::Slides) { Ok(()) } else { Err(NO_SLIDES.into()) }
 }
 pub const NOTHING_SELECTED: &str = "nothing selected";
 pub const SELECT_TWO: &str = "select two or more objects";
@@ -120,15 +125,15 @@ pub fn has_text(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
     if s.active().is_some_and(|d| d.selection.text.is_some()) { Ok(()) } else { Err(NO_TEXT_POINT.into()) }
 }
-/// Text editing or shapes with text selected (formatting commands apply to either).
+/// Text editing or selected shapes (formatting commands apply to either).
 pub fn has_text_or_shapes(s: &Session) -> std::result::Result<(), String> {
     has_doc(s)?;
     if s.active().is_some_and(|d| d.selection.text.is_some() || !d.selection.shapes.is_empty()) { Ok(()) } else { Err(SELECT_TEXT_OR_SHAPE.into()) }
 }
 pub(crate) fn how_to_enable(cmd: &str, reason: &str) -> String {
     match reason {
-        "no presentation open" => " file.new or file.open opens one.".into(),
-        "no slides" => " slide.new adds one.".into(),
+        NO_PRESENTATION => " file.new or file.open opens one.".into(),
+        NO_SLIDES => " slide.new adds one.".into(),
         NOTHING_SELECTED | SELECT_TWO => {
             let acts = find_command(cmd).and_then(|c| c.acts_on_for(reason)).map(|a| format!(" {a}")).unwrap_or_default();
             format!("{acts} edit.select {{\"ids\": […]}} selects shapes.")
@@ -311,9 +316,8 @@ pub(crate) fn check_params(spec: &CommandSpec, p: &Value) -> Result<()> {
         }
     };
     let Ok(known) = param_keys(spec.params) else { return Ok(()) };
-    let targets = known.iter().any(|k| matches!(*k, "id" | "ids"));
-    let unknown: Vec<String> =
-        given.keys().filter(|k| !known.contains(&k.as_str()) && !(targets && matches!(k.as_str(), "id" | "ids"))).cloned().collect();
+    let one_of_ids = known.contains(&"ids");
+    let unknown: Vec<String> = given.keys().filter(|k| !known.contains(&k.as_str()) && !(one_of_ids && k.as_str() == "id")).cloned().collect();
     if unknown.is_empty() {
         return Ok(());
     }

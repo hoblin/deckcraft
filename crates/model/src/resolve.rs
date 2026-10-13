@@ -123,7 +123,7 @@ pub fn inherited_geom<'a>(ctx: &Ctx<'a>, shape: &Shape) -> Option<&'a Geom> {
         return None;
     }
     let (lp, mp) = parents(ctx, shape);
-    [lp, mp].into_iter().flatten().map(|s| &s.geom).find(|g| !g.is_plain_rect())
+    [lp, mp].into_iter().flatten().find(|s| s.geom_set || !s.geom.is_plain_rect()).map(|s| &s.geom).filter(|g| !g.is_plain_rect())
 }
 
 pub fn xfrm(ctx: &Ctx, shape: &Shape) -> Xfrm {

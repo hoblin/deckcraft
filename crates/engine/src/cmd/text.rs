@@ -631,8 +631,8 @@ pub(crate) fn format_runs(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + S
 
 /// In Slide Master view, formatting placeholders sets the text style slides inherit. On the
 /// master, its title and body placeholders set the master's title and body styles and the others
-/// their own; on a layout, a placeholder sets its own. False when the selection isn't
-/// placeholders there.
+/// their own; on a layout, a placeholder sets its own. False outside Slide Master view, while
+/// editing notes or a table cell, and when the selection isn't placeholders.
 pub(crate) fn format_style(s: &mut Session, f: &(dyn Fn(u8, &mut LevelStyle) + Send + Sync)) -> Result<bool> {
     let st = s.doc()?;
     if st.selection.target == Target::Slides {
