@@ -819,7 +819,7 @@ fn a_layout_can_hide_the_slide_master_graphics() {
 }
 
 #[test]
-fn a_layout_takes_title_subtitle_date_footer_and_slide_number_placeholders() {
+fn a_layout_takes_subtitle_date_footer_and_slide_number_placeholders() {
     use deckcraft_model::PhType;
     let mut s = template();
     s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
@@ -1029,6 +1029,23 @@ fn growing_a_layout_placeholder_steps_each_level_from_its_own_size() {
     let after: Vec<f64> = (0..3).map(|l| style.level(l).unwrap().run.size.unwrap()).collect();
     assert!(after.iter().zip(&before).all(|(a, b)| a > b), "{before:?} → {after:?}");
     assert!(after[0] > after[1] && after[1] > after[2], "{after:?}");
+}
+
+#[test]
+fn growing_several_placeholders_steps_each_from_its_own_size() {
+    use deckcraft_model::PhType;
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"master": 0})).unwrap();
+    let (title, body) = (placeholder(&s, PhType::Title), placeholder(&s, PhType::Body));
+    s.execute("edit.select", &json!({"ids": [title, body]})).unwrap();
+    let size = |s: &Session| {
+        let m = &s.doc().unwrap().doc.masters[0];
+        (m.title_style.level(0).unwrap().run.size.unwrap(), m.body_style.level(0).unwrap().run.size.unwrap())
+    };
+    let (title_before, body_before) = size(&s);
+    s.execute("format.grow", &json!({})).unwrap();
+    let (title_after, body_after) = size(&s);
+    assert!(title_after > title_before && body_after > body_before && body_after < title_before, "{body_before} → {body_after}");
 }
 
 #[test]

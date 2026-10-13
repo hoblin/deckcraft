@@ -575,7 +575,7 @@ fn get(s: &mut Session, p: &Value) -> Result<Value> {
 /// Character formatting: a placeholder's text style in Slide Master view ([`format_style`]),
 /// else the text ([`format_runs`]).
 pub(crate) fn format_run(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + Sync)) -> Result<Value> {
-    if format_style(s, &|_, ls| f(&mut ls.run))? {
+    if format_style(s, &|_, _, ls| f(&mut ls.run))? {
         return ok();
     }
     format_runs(s, f)
@@ -633,7 +633,7 @@ pub(crate) fn format_runs(s: &mut Session, f: &(dyn Fn(&mut RunProps) + Send + S
 /// master, its title and body placeholders set the master's title and body styles and the others
 /// their own; on a layout, a placeholder sets its own. False outside Slide Master view, while
 /// editing notes or a table cell, and when the selection isn't placeholders.
-pub(crate) fn format_style(s: &mut Session, f: &(dyn Fn(u8, &mut LevelStyle) + Send + Sync)) -> Result<bool> {
+pub(crate) fn format_style(s: &mut Session, f: &(dyn Fn(ShapeId, u8, &mut LevelStyle) + Send + Sync)) -> Result<bool> {
     let st = s.doc()?;
     if st.selection.target == Target::Slides {
         return Ok(false);
@@ -672,7 +672,7 @@ fn style_levels(sh: &deckcraft_model::Shape) -> Vec<u8> {
     }
 }
 
-fn restyle(doc: &mut Presentation, target: Target, id: ShapeId, levels: &[u8], f: &(dyn Fn(u8, &mut LevelStyle) + Send + Sync)) {
+fn restyle(doc: &mut Presentation, target: Target, id: ShapeId, levels: &[u8], f: &(dyn Fn(ShapeId, u8, &mut LevelStyle) + Send + Sync)) {
     let (master, layout) = match target {
         Target::Master { master } => (master, None),
         Target::Layout { master, layout } => (master, Some(layout)),
@@ -698,7 +698,7 @@ fn restyle(doc: &mut Presentation, target: Target, id: ShapeId, levels: &[u8], f
     let Some(style) = style else { return };
     for &level in levels {
         let mut ls = style.level(level).cloned().unwrap_or_default();
-        f(level, &mut ls);
+        f(id, level, &mut ls);
         style.set(level, ls);
     }
 }
@@ -751,7 +751,7 @@ pub(crate) fn link_text(s: &mut Session, link: Hyperlink, display: &str) -> Resu
 /// Paragraph formatting: a placeholder's text style in Slide Master view ([`format_style`]),
 /// else the paragraphs ([`format_paragraphs`]).
 pub(crate) fn format_para(s: &mut Session, f: &(dyn Fn(&mut deckcraft_model::text::Paragraph) + Send + Sync)) -> Result<Value> {
-    let restyled = format_style(s, &|level, ls| {
+    let restyled = format_style(s, &|_, level, ls| {
         let mut p = deckcraft_model::text::Paragraph { level, props: ls.para.clone(), ..Default::default() };
         f(&mut p);
         ls.para = p.props;

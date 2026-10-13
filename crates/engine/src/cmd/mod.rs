@@ -37,7 +37,7 @@ pub struct CommandSpec {
     /// The parameters as `describe` and `commands` show them, and the keys [`Session::call`]
     /// accepts, read by `parse_params` and `param_keys`: `?` marks an optional key, a spaced ` | `
     /// separates alternative sets of keys (so alternative values are written unspaced, `ms|null`),
-    /// `(…)` is a remark and `→` starts the answer.
+    /// `(…)` is a remark and `→` starts the answer. Where `ids` is listed, `id` is accepted too.
     pub params: &'static str,
     pub enabled: Enabled,
     pub run: Run,
@@ -58,7 +58,8 @@ pub struct CommandInfo {
 }
 
 impl CommandSpec {
-    /// Holds because `Session::execute` skips the selection check when `id` or `ids` is given.
+    /// The "else on the selected shapes" it promises relies on `Session::execute` skipping the
+    /// selection check when `id` or `ids` is given.
     pub fn acts_on(&self) -> Option<String> {
         self.acts_on_for(&(self.enabled)(&Session::with_new()).err()?)
     }
@@ -316,8 +317,8 @@ pub(crate) fn check_params(spec: &CommandSpec, p: &Value) -> Result<()> {
         }
     };
     let Ok(known) = param_keys(spec.params) else { return Ok(()) };
-    let one_of_ids = known.contains(&"ids");
-    let unknown: Vec<String> = given.keys().filter(|k| !known.contains(&k.as_str()) && !(one_of_ids && k.as_str() == "id")).cloned().collect();
+    let takes_ids = known.contains(&"ids");
+    let unknown: Vec<String> = given.keys().filter(|k| !known.contains(&k.as_str()) && !(takes_ids && k.as_str() == "id")).cloned().collect();
     if unknown.is_empty() {
         return Ok(());
     }

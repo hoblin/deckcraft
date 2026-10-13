@@ -951,6 +951,27 @@ mod tests {
     }
 
     #[test]
+    fn save_as_template_picks_a_potx_and_saves_a_template() {
+        let path = std::env::temp_dir().join(format!("dc-ui-template-{}.potx", std::process::id()));
+        let picked = path.to_str().unwrap().to_string();
+        let suggested = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let seen = suggested.clone();
+        let services = Services {
+            pick_save: Some(Box::new(move |name| {
+                *seen.lock().unwrap() = name.to_string();
+                Some(picked.clone())
+            })),
+            ..Default::default()
+        };
+        let mut app = SlideApp::new(Session::with_new(), services);
+        app.run("file.saveTemplate", json!({})).unwrap();
+        assert!(suggested.lock().unwrap().ends_with(".potx"), "{}", suggested.lock().unwrap());
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(bytes.starts_with(b"PK"), "a zip package");
+    }
+
+    #[test]
     fn the_control_channel_answers_engine_commands_in_words() {
         let mut app = SlideApp::new(Session::with_new(), Services::default());
         let ctx = egui::Context::default();
