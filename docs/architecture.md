@@ -68,13 +68,15 @@ overlays an invisible real-text layer with embedded font subsets.
 ## Quality gates
 
 `cargo xtask ci`: rustfmt check, clippy `-D warnings`, tests, layering, asset attribution
-(`cargo xtask assets`), wasm32 check. CI runs it on Ubuntu for every PR and push to `main`;
-macOS is built and tested by the release workflow only. Releases (pushes to `release`) build signed
-macOS, Windows, Linux, FreeBSD and web artifacts.
+(`cargo xtask assets`), wasm32 check. CI runs it on Ubuntu for every PR and push to `main`.
+This fork releases on a `v*` tag: one Linux x86_64 tarball in upstream's shape, with
+`SHA256SUMS.txt`, as a GitHub release of the fork. Upstream's signed macOS, Windows, FreeBSD and
+web builds are not part of it.
 
 ## Revision history
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | The fork's release workflow: a Linux x86_64 tarball on tag |
 | 2026-10-13 | minor | The CLI, control channel and MCP go through `Session::call` |
 | 2026-10-10 | major | Created from the code on main (d556ff9) and AGENTS.md §4 |
