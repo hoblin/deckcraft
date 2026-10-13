@@ -209,19 +209,37 @@ fn flip(s: &mut Session, p: &Value) -> Result<Value> {
 fn adjust(s: &mut Session, p: &Value) -> Result<Value> {
     let i = usize_param(p, "index").unwrap_or(0).min(16);
     let v = f64_param(p, "value").ok_or_else(|| bad("shape.adjust", "missing `value`"))?;
+    let geoms: std::collections::HashMap<ShapeId, Geom> = {
+        let ids = targets(s, p)?;
+        let st = s.doc()?;
+        ids.into_iter().filter_map(|id| st.shape(id).map(|sh| (id, geom_of(&st.doc, &st.selection, sh)))).collect()
+    };
     edit_shapes(s, p, "shape.adjust", |sh| {
-        if let Geom::Preset { name, adj } = &mut sh.geom {
-            let defaults = deckcraft_geom::preset::info(name).map(|x| x.defaults).unwrap_or(&[]);
-            while adj.len() <= i {
-                let k = adj.len();
-                adj.push(defaults.get(k).copied().unwrap_or(0.0));
-            }
-            if let Some(slot) = adj.get_mut(i) {
-                *slot = v;
-            }
-        }
+        let geom = geoms.get(&sh.id).cloned().unwrap_or_else(|| sh.geom.clone());
+        set_adjust(sh, &geom, &[(i, v)]);
         Ok(())
     })
+}
+
+/// Set adjust values on a preset shape. A placeholder drawn with its layout's or master's preset
+/// (`geom`) takes a copy of it first, which is then its own.
+pub(crate) fn set_adjust(sh: &mut deckcraft_model::Shape, geom: &Geom, vals: &[(usize, f64)]) {
+    if !matches!(geom, Geom::Preset { .. }) {
+        return;
+    }
+    sh.geom = geom.clone();
+    let Geom::Preset { name, adj } = &mut sh.geom else { return };
+    let defaults = deckcraft_geom::preset::info(name.as_str()).map(|x| x.defaults).unwrap_or(&[]);
+    for (i, v) in vals {
+        while adj.len() <= *i {
+            let k = adj.len();
+            adj.push(defaults.get(k).copied().unwrap_or(0.0));
+        }
+        if let Some(slot) = adj.get_mut(*i) {
+            *slot = *v;
+        }
+    }
+    sh.geom_set |= sh.ph.is_some();
 }
 
 fn change(s: &mut Session, p: &Value) -> Result<Value> {
@@ -720,19 +738,16 @@ fn media_options(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({}))
 }
 
-fn shape_id(p: &Value, key: &str) -> Option<deckcraft_model::ShapeId> {
-    p.get(key).and_then(Value::as_u64).map(|v| deckcraft_model::ShapeId(v as u32))
-}
-
 fn sites(s: &mut Session, p: &Value) -> Result<Value> {
-    let id = shape_id(p, "id").ok_or_else(|| bad("shape.sites", "missing `id`"))?;
+    let id = id_param(p, "id").ok_or_else(|| bad("shape.sites", "missing `id`"))?;
     let st = s.doc()?;
     let sh = st.shape(id).ok_or_else(|| bad("shape.sites", crate::describe::no_shape(st, id)))?;
     Ok(json!(crate::connect::sites(&st.doc, &st.selection, sh).iter().map(|q| [q.x, q.y]).collect::<Vec<_>>()))
 }
 
 fn connect(s: &mut Session, p: &Value) -> Result<Value> {
-    let (Some(from), Some(to)) = (shape_id(p, "from"), shape_id(p, "to")) else { return Err(bad("shape.connect", "missing `from` / `to`")) };
+    let (Some(from), Some(to)) = (id_param(p, "from"), id_param(p, "to")) else { return Err(bad("shape.connect", "missing `from` / `to`")) };
+    present(s, [Some(from), Some(to), id_param(p, "id")].into_iter().flatten().collect())?;
     let st = s.doc()?;
     let site_list = |id| st.shape(id).map(|sh| crate::connect::sites(&st.doc, &st.selection, sh)).unwrap_or_default();
     let (a, b) = (site_list(from), site_list(to));
@@ -756,7 +771,7 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
         }
     };
     let (p0, p1) = (a[ia], b[ib]);
-    let id = match shape_id(p, "id") {
+    let id = match id_param(p, "id") {
         Some(id) => id,
         None => {
             let preset = str_param(p, "preset").unwrap_or("straightConnector1");

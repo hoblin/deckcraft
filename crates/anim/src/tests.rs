@@ -789,3 +789,18 @@ fn show_follows_links() {
     assert_eq!(s.follow(&p, &Action::LastViewed, None), LinkJump::None);
     assert_eq!(s.slide, 3);
 }
+
+#[test]
+fn morph_starts_from_the_shape_a_placeholder_takes_from_its_layout() {
+    use deckcraft_model::{Geom, PhType};
+    let mut p = deckcraft_model::defaults::new_presentation(None);
+    let layout = &mut Arc::make_mut(&mut p.masters[0]).layouts[0];
+    let subtitle = layout.shapes.iter_mut().find(|s| s.ph_type() == Some(PhType::SubTitle)).unwrap();
+    subtitle.geom = Geom::preset("roundRect");
+    let (ph, layout_id) = (subtitle.ph.clone(), layout.id);
+    let on = |shape: Shape| Slide { layout: layout_id, shapes: vec![Shape { ph: ph.clone(), ..shape }], ..Default::default() };
+    let a = on(shape(1, "Box"));
+    let b = on(Shape { geom: Geom::preset("ellipse"), geom_set: true, ..shape(1, "Box") });
+    let f = morph_frame(&p, &a, &b, 0.5, &|_| false);
+    assert_eq!(f.paths.iter().map(|m| &m.from).collect::<Vec<_>>(), [&Geom::preset("roundRect")]);
+}

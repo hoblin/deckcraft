@@ -263,10 +263,7 @@ fn row_height(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn select_cells(s: &mut Session, p: &Value) -> Result<Value> {
-    let id = match id_param(p, "id") {
-        Some(i) => i,
-        None => s.doc()?.selection.shapes.first().copied().ok_or_else(|| bad("table.selectCells", "select a table"))?,
-    };
+    let id = targets(s, p)?.first().copied().ok_or_else(|| bad("table.selectCells", "select a table"))?;
     let from = cell_param(p, "from").unwrap_or((0, 0));
     let to = cell_param(p, "to").unwrap_or(from);
     s.select(|_, sel| {

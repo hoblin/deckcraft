@@ -304,10 +304,8 @@ fn get(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn painter_pick(s: &mut Session, p: &Value) -> Result<Value> {
+    let id = targets(s, p)?.first().copied().ok_or_else(|| bad("animation.painter", "select an animated shape first"))?;
     let st = s.doc()?;
-    let id = id_param(p, "id")
-        .or_else(|| st.selection.shapes.first().copied())
-        .ok_or_else(|| bad("animation.painter", "select an animated shape first"))?;
     let sl = st.current_slide().ok_or_else(|| bad("animation.painter", "no slide"))?;
     let anims: Vec<Animation> = sl.animations.iter().filter(|a| a.shape == id).cloned().collect();
     if anims.is_empty() {

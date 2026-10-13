@@ -445,6 +445,26 @@ pub fn xfrm_of(doc: &deckcraft_model::Presentation, sel: &crate::Selection, shap
     x
 }
 
+/// The geometry a shape of the edited tree is drawn with: a placeholder without its own takes its
+/// layout's or master's.
+pub fn geom_of(doc: &deckcraft_model::Presentation, sel: &crate::Selection, shape: &deckcraft_model::Shape) -> deckcraft_model::Geom {
+    text::ctx_for(doc, sel).and_then(|c| deckcraft_model::resolve::inherited_geom(&c, shape).cloned()).unwrap_or_else(|| shape.geom.clone())
+}
+
+/// [`geom_of`] laid out at size `w` × `h`.
+pub fn geometry_of(
+    doc: &deckcraft_model::Presentation,
+    sel: &crate::Selection,
+    shape: &deckcraft_model::Shape,
+    w: f64,
+    h: f64,
+) -> deckcraft_geom::preset::Geometry {
+    match text::ctx_for(doc, sel) {
+        Some(c) => deckcraft_render::inherited_geometry(&c, shape, w, h),
+        None => deckcraft_render::shape_geometry(shape, w, h),
+    }
+}
+
 /// Row heights of table `t` as drawn: a stored height is a minimum, rows grow to fit their text.
 pub fn table_drawn_heights(doc: &deckcraft_model::Presentation, sel: &crate::Selection, t: &deckcraft_model::Table) -> Vec<f64> {
     match text::ctx_for(doc, sel) {

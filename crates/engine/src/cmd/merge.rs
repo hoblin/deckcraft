@@ -33,7 +33,7 @@ pub fn specs() -> Vec<CommandSpec> {
 /// The filled outline of `s` in slide points (curves flattened).
 fn area_of(doc: &deckcraft_model::Presentation, sel: &crate::Selection, s: &Shape) -> Area {
     let x = xfrm_of(doc, sel, s);
-    let geo = deckcraft_render::shape_geometry(s, x.w, x.h);
+    let geo = super::geometry_of(doc, sel, s, x.w, x.h);
     let a = x.affine();
     let mut out: Area = vec![];
     for sp in geo.paths.iter().filter(|p| p.fill != deckcraft_geom::preset::FillMode::None) {
