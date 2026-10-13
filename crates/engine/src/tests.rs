@@ -687,9 +687,28 @@ fn a_shape_off_the_current_slide_is_reported_where_it_is() {
         ("edit.select", json!({"ids": [id]})),
         ("edit.delete", json!({"ids": [id]})),
         ("arrange.bringToFront", json!({"id": id})),
+        ("arrange.reorder", json!({"id": id, "index": 0})),
+        ("table.selectCells", json!({"id": id})),
+        ("comment.add", json!({"text": "x", "id": id})),
+        ("shape.connect", json!({"from": id, "to": id})),
+        ("animation.painter", json!({"id": id})),
     ] {
         assert_eq!(said(&mut s, cmd, p), off_slide, "{cmd}");
     }
+    let missing = "no shape 9999 in the presentation; slide.inspect lists the shapes of slide index 1, the one being edited";
+    let line = insert(&mut s, "Box");
+    for (cmd, p) in [
+        ("arrange.reorder", json!({"id": 9999, "index": 0})),
+        ("table.selectCells", json!({"id": 9999})),
+        ("comment.add", json!({"text": "x", "id": 9999})),
+        ("shape.connect", json!({"from": line, "to": 9999})),
+        ("shape.connect", json!({"from": line, "to": line, "id": 9999})),
+        ("animation.painter", json!({"id": 9999})),
+    ] {
+        assert_eq!(said(&mut s, cmd, p), missing, "{cmd}");
+    }
+    let st = s.doc().unwrap();
+    assert!(st.doc.slides[1].comments.is_empty() && st.selection.cells.is_none(), "a refused call changes nothing");
     assert_eq!(
         said(&mut s, "shape.inspect", json!({"id": 9999})),
         "invalid parameters for `shape.inspect`: no shape 9999 in the presentation; slide.inspect lists the shapes of slide index 1, \
@@ -1063,11 +1082,43 @@ fn save_template_writes_a_potx_only() {
 }
 
 #[test]
+fn deleting_slide_ids_that_dont_exist_deletes_nothing() {
+    let mut s = session();
+    s.call("slide.new", &json!({})).unwrap();
+    s.call("slide.new", &json!({})).unwrap();
+    let first = s.doc().unwrap().doc.slides[0].id.0;
+    let takes = "`slide.delete` takes {index?, ids?: [slide id]}.";
+    assert_eq!(
+        said(&mut s, "slide.delete", json!({"ids": [first, 9999]})),
+        format!("invalid parameters for `slide.delete`: no slide has id 9999; document.inspect lists the slide ids. {takes}")
+    );
+    assert_eq!(
+        said(&mut s, "slide.delete", json!({"ids": [9999, 8888]})),
+        format!("invalid parameters for `slide.delete`: no slides have ids 9999, 8888; document.inspect lists the slide ids. {takes}")
+    );
+    assert_eq!(
+        said(&mut s, "slide.delete", json!({"ids": []})),
+        format!("invalid parameters for `slide.delete`: `ids` is empty; document.inspect lists the slide ids. {takes}")
+    );
+    assert_eq!(s.doc().unwrap().doc.slides.len(), 3, "a refused delete deletes nothing");
+    s.call("slide.delete", &json!({"ids": [first]})).unwrap();
+    assert_eq!(s.doc().unwrap().doc.slides.len(), 2);
+}
+
+#[test]
 fn an_index_out_of_range_names_the_range() {
     let mut s = session();
     assert_eq!(
         said(&mut s, "slide.go", json!({"index": 7})),
         "invalid parameters for `slide.go`: no slide at index 7; indices run 0–0. `slide.go` takes {index} | {id}."
+    );
+    assert_eq!(
+        said(&mut s, "slide.delete", json!({"index": 7})),
+        "invalid parameters for `slide.delete`: no slide at index 7; indices run 0–0. `slide.delete` takes {index?, ids?: [slide id]}."
+    );
+    assert_eq!(
+        said(&mut s, "slide.layout", json!({"layout": "blank", "index": 7})),
+        "invalid parameters for `slide.layout`: no slide at index 7; indices run 0–0. `slide.layout` takes {layout: name or kind, index?}."
     );
     assert_eq!(
         said(&mut s, "section.rename", json!({"index": 2, "name": "A"})),

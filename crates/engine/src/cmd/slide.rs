@@ -216,19 +216,26 @@ fn src_id(doc: &Presentation, i: usize) -> SlideId {
 fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     let ids: Vec<SlideId> = {
         let st = s.doc()?;
+        let n = st.doc.slides.len();
         if let Some(a) = p.get("ids").and_then(Value::as_array) {
-            a.iter().filter_map(Value::as_u64).filter_map(|v| u32::try_from(v).ok()).map(SlideId).collect()
+            if a.is_empty() {
+                return Err(bad("slide.delete", "`ids` is empty; document.inspect lists the slide ids"));
+            }
+            let found = |v: &Value| v.as_u64().and_then(|v| u32::try_from(v).ok()).map(SlideId).filter(|id| st.doc.slide_index(*id).is_some());
+            let missing: Vec<String> = a.iter().filter(|v| found(v).is_none()).map(Value::to_string).collect();
+            match missing.as_slice() {
+                [] => a.iter().filter_map(found).collect(),
+                [one] => return Err(bad("slide.delete", format!("no slide has id {one}; document.inspect lists the slide ids"))),
+                many => return Err(bad("slide.delete", format!("no slides have ids {}; document.inspect lists the slide ids", many.join(", ")))),
+            }
         } else if let Some(i) = usize_param(p, "index") {
-            st.doc.slides.get(i).map(|x| vec![x.id]).unwrap_or_default()
+            vec![st.doc.slides.get(i).ok_or_else(|| bad("slide.delete", none_at("slide", i, n)))?.id]
         } else if !st.selection.slides.is_empty() {
             st.selection.slides.clone()
         } else {
-            st.current_slide().map(|x| vec![x.id]).unwrap_or_default()
+            vec![st.current_slide().ok_or_else(|| bad("slide.delete", none_at("slide", st.selection.slide, n)))?.id]
         }
     };
-    if ids.is_empty() {
-        return Err(bad("slide.delete", "no such slide"));
-    }
     s.edit(|doc, sel| {
         let first = ids.iter().filter_map(|id| doc.slide_index(*id)).min().unwrap_or(0);
         doc.slides.retain(|x| !ids.contains(&x.id));
@@ -377,7 +384,8 @@ pub fn apply_layout(doc: &mut Presentation, index: usize, layout: LayoutId) -> R
         let id = deckcraft_model::ShapeId(doc.alloc_id());
         fresh.push((id, ls.clone()));
     }
-    let slide = doc.slides.get_mut(index).ok_or_else(|| bad("slide.layout", "no slide"))?;
+    let n = doc.slides.len();
+    let slide = doc.slides.get_mut(index).ok_or_else(|| bad("slide.layout", none_at("slide", index, n)))?;
     let slide = Arc::make_mut(slide);
     let mut old: Vec<deckcraft_model::Shape> = std::mem::take(&mut slide.shapes);
     let mut out = vec![];
