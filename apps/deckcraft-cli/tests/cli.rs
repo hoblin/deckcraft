@@ -247,13 +247,15 @@ fn png_size(path: &std::path::Path) -> (u32, u32) {
 }
 
 #[test]
-fn preview_draws_the_current_slide_next_to_the_deck() {
+fn preview_draws_the_current_slide_or_a_given_one_next_to_the_deck() {
     let dir = fresh_dir("preview");
     let out = in_dir(&dir, &["run", "--sample", "--cmd", r#"slide.go={"index":2}"#, "--save", "q3.deckcraft", "--preview"]);
     assert_eq!(stdout(&out), "OK: 1 command ran, saved q3.deckcraft, preview q3.preview.png (slide index 2)\n");
     assert_eq!(png_size(&dir.join("q3.preview.png")), (960, 540));
-    let out = in_dir(&dir, &["run", "--in", "q3.deckcraft", "--print", "--preview", "0"]);
-    assert_eq!(stdout(&out), "preview q3.preview.png (slide index 0)\n");
+    let out = in_dir(&dir, &["run", "--in", "q3.deckcraft", "--preview", "5", "--print"]);
+    assert_eq!(stdout(&out), "preview q3.preview.png (slide index 5)\n", "--print shows the preview on a line of its own");
+    let out = in_dir(&dir, &["run", "--in", "q3.deckcraft", "--cmd", r#"view.slideMaster={"layout":1}"#, "--preview"]);
+    assert_eq!(stdout(&out), "OK: 1 command ran, preview q3.preview.png (layout 1 of slide master 0)\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -267,10 +269,15 @@ fn preview_all_draws_a_contact_sheet() {
 }
 
 #[test]
-fn a_preview_of_a_slide_that_isnt_there_writes_nothing() {
+fn a_preview_that_cant_be_drawn_writes_nothing() {
     let dir = fresh_dir("preview-missing");
     let out = in_dir(&dir, &["run", "--sample", "--save", "q3.deckcraft", "--preview", "9"]);
     assert_eq!(stderr(&out), "deckcraft-cli: --preview 9: no slide at index 9; indices run 0–7. Nothing was saved or exported.\n");
+    let out = in_dir(&dir, &["run", "--sample", "--preview", "two", "--save", "q3.deckcraft"]);
+    assert_eq!(
+        stderr(&out),
+        "deckcraft-cli: --preview was given `two`; it takes a slide index, `all` for a contact sheet, or nothing for the current slide.\n"
+    );
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
     std::fs::remove_dir_all(&dir).unwrap();
 }

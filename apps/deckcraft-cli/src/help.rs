@@ -51,9 +51,11 @@ everything; .pptx, .potx, .ppsx, .pdf and .md (the outline) are written as conve
 current slide as .png or .jpg, or the presentation as .pdf or .pptx.
 
 --preview draws a picture of the result once the commands have run, so you can look at it in the same
-step: the current slide, or with N the slide at index N, or with `all` a contact sheet of every slide,
-small and labelled with its index. It is written next to the presentation as NAME.preview.png (with
-no --in or --save, as preview.png in the current folder), replacing the last one.
+step: the current slide 960 pixels wide (in Slide Master view, the master or layout being edited), or
+with N the slide at index N, or with `all` a contact sheet of every slide, small and labelled with its
+index; a deck too long for one readable sheet is refused. It is written as NAME.preview.png next to
+the --save presentation, else the --in one (else as preview.png in the current folder), replacing the
+last one.
 
   deckcraft-cli run --in q3.deckcraft --cmd 'slide.go={\"index\":2}' --preview
 

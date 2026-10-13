@@ -36,7 +36,7 @@ pub use images::{decode as decode_image, gif_frame};
 pub use morph_path::PathMorph;
 pub use morph_text::TextMorph;
 pub use placed::{Placed, PlacedLink, PlacedText, place_slide};
-pub use sheet::render_sheet;
+pub use sheet::{CONTACT_SHEET_SIDE, ContactSheetError, render_contact_sheet};
 pub use table::row_heights as table_row_heights;
 
 /// Largest pixmap side we render (vello_cpu uses u16 sizes).

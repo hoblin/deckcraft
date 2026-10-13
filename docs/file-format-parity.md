@@ -26,7 +26,7 @@ PowerPoint opens and saves; Viewer = opens only).
 | `.deckcraft` native (zip + JSON) | n/a | yes (also `.slidecraft`) | yes | Lossless for the DeckCraft model, forward compatible | `crates/format` tests |
 | PDF | export | no | yes | Slides, notes pages, handouts (1–9); real-text layer with embedded subsets, links, bookmarks. Slide artwork is a raster image at print resolution, not vector | `crates/pdf` tests |
 | Outline `.rtf` / `.txt` | export (RTF), import (outline) | `.txt`/`.md` outline (`slide.fromOutline`) | `.txt` outline | No RTF | engine tests |
-| PNG / JPEG slide images | export | n/a | yes (`file.export`, `deckcraft-cli render`, `deckcraft-cli run --preview`, which also draws a contact sheet of every slide) | Matches the editor's renderer | render and CLI tests |
+| PNG / JPEG slide images | export | n/a | yes (`file.export`, `deckcraft-cli render`, `deckcraft-cli run --preview`; `file.export {sheet: true}` draws a contact sheet of every slide) | Matches the editor's renderer | render and CLI tests |
 | TIFF / BMP / GIF slide images | export | n/a | no | Easy (the `image` crate writes them) | none |
 | Animated GIF of the deck | export | n/a | no | | none |
 | MP4 / MOV video of the deck | export | n/a | no | Needs timeline render + H.264 encode | none |
