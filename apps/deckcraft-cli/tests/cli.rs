@@ -228,3 +228,49 @@ fn an_unknown_parameter_is_refused() {
          adj?: [number] (preset adjustments), flip?: h|v|hv}.\n"
     );
 }
+
+fn in_dir(dir: &std::path::Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_deckcraft-cli")).current_dir(dir).args(args).output().unwrap()
+}
+
+fn fresh_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("dc-cli-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn png_size(path: &std::path::Path) -> (u32, u32) {
+    let png = std::fs::read(path).unwrap();
+    let at = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap());
+    (at(16), at(20))
+}
+
+#[test]
+fn preview_draws_the_current_slide_next_to_the_deck() {
+    let dir = fresh_dir("preview");
+    let out = in_dir(&dir, &["run", "--sample", "--cmd", r#"slide.go={"index":2}"#, "--save", "q3.deckcraft", "--preview"]);
+    assert_eq!(stdout(&out), "OK: 1 command ran, saved q3.deckcraft, preview q3.preview.png (slide index 2)\n");
+    assert_eq!(png_size(&dir.join("q3.preview.png")), (960, 540));
+    let out = in_dir(&dir, &["run", "--in", "q3.deckcraft", "--print", "--preview", "0"]);
+    assert_eq!(stdout(&out), "preview q3.preview.png (slide index 0)\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn preview_all_draws_a_contact_sheet() {
+    let dir = fresh_dir("sheet");
+    let out = in_dir(&dir, &["run", "--sample", "--preview", "all"]);
+    assert_eq!(stdout(&out), "OK: 0 commands ran, preview preview.png (contact sheet of 8 slides)\n");
+    assert_eq!(png_size(&dir.join("preview.png")), (1360, 456));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn a_preview_of_a_slide_that_isnt_there_writes_nothing() {
+    let dir = fresh_dir("preview-missing");
+    let out = in_dir(&dir, &["run", "--sample", "--save", "q3.deckcraft", "--preview", "9"]);
+    assert_eq!(stderr(&out), "deckcraft-cli: --preview 9: no slide at index 9; indices run 0–7. Nothing was saved or exported.\n");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

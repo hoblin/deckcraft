@@ -190,9 +190,21 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut save = None;
     let mut export = None;
     let mut print = false;
+    let mut preview = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "--preview" => {
+                let which = match it.clone().next().map(String::as_str) {
+                    Some("all") => Preview::Sheet,
+                    Some(v) => v.parse().map(Preview::Slide).unwrap_or(Preview::Current),
+                    None => Preview::Current,
+                };
+                if which != Preview::Current {
+                    it.next();
+                }
+                preview = Some(which);
+            }
             "--in" => input = Some(it.next().cloned().ok_or("--in needs a file")?),
             "--sample" => sample = true,
             "--cmd" => cmds.push(it.next().cloned().ok_or("--cmd needs COMMAND[=PARAMS]")?),
@@ -202,7 +214,7 @@ fn run(args: &[String]) -> Result<(), String> {
             other => {
                 return Err(format!(
                     "run was given `{other}`, which it doesn't take. run takes --in FILE or --sample, --cmd COMMAND=PARAMS (any number), \
-                     --save OUT, --export OUT and --print"
+                     --save OUT, --export OUT, --preview [N | all] and --print"
                 ));
             }
         }
@@ -246,6 +258,10 @@ fn run(args: &[String]) -> Result<(), String> {
         }
     }
     let mut done = vec![if total == 1 { "1 command ran".to_string() } else { format!("{total} commands ran") }];
+    let picture = match preview {
+        Some(which) => Some(draw_preview(&s, which).map_err(|e| if unsaved { format!("{e} Nothing was saved or exported.") } else { e })?),
+        None => None,
+    };
     if let Some(p) = save {
         s.execute("file.saveAs", &json!({"path": p})).map_err(|e| e.to_string())?;
         done.push(format!("saved {p}"));
@@ -254,10 +270,54 @@ fn run(args: &[String]) -> Result<(), String> {
         s.execute("file.export", &json!({"path": p})).map_err(|e| e.to_string())?;
         done.push(format!("exported {p}"));
     }
+    if let Some((png, what)) = picture {
+        let deck = s.doc().ok().and_then(|d| d.path.clone()).or(input);
+        let file = match deck.as_deref().map(std::path::Path::new) {
+            Some(deck) => deck.with_file_name(format!("{}.preview.png", deck.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"))),
+            None => std::path::PathBuf::from("preview.png"),
+        };
+        std::fs::write(&file, png).map_err(|e| format!("could not write the preview {}: {e}", file.display()))?;
+        let said = format!("preview {} ({what})", file.display());
+        if print {
+            outln!("{said}");
+        }
+        done.push(said);
+    }
     if !print {
         outln!("OK: {}", done.join(", "));
     }
     Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Preview {
+    Current,
+    Slide(usize),
+    Sheet,
+}
+
+fn draw_preview(s: &Session, which: Preview) -> Result<(Vec<u8>, String), String> {
+    use deckcraft_engine::render::{RenderOpts, render_sheet, render_slide};
+    let st = s.doc().map_err(|e| e.to_string())?;
+    let n = st.doc.slides.len();
+    if n == 0 {
+        return Err("--preview: the presentation has no slides to show.".into());
+    }
+    let (img, what) = match which {
+        Preview::Sheet => (render_sheet(&st.doc, 320), format!("contact sheet of {n} slides")),
+        Preview::Current | Preview::Slide(_) => {
+            let i = if let Preview::Slide(i) = which { i } else { st.selection.slide };
+            if i >= n {
+                return Err(format!("--preview {i}: no slide at index {i}; indices run 0–{}.", n - 1));
+            }
+            (render_slide(&st.doc, i, &RenderOpts { scale: 1.0, ..Default::default() }), format!("slide index {i}"))
+        }
+    };
+    let png = img.to_png();
+    if png.is_empty() {
+        return Err("--preview: the picture could not be drawn.".into());
+    }
+    Ok((png, what))
 }
 
 fn params(id: &str, json: &str) -> Result<Value, String> {
