@@ -1,6 +1,6 @@
 # DeckCraft architecture
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (outside callers go through `Session::call`; previous: major, created from the code on main at d556ff9; AGENTS.md §4 keeps the rules) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (the fork's release workflow: a Linux x86_64 tarball on tag; previous: minor, outside callers go through `Session::call`; before that: major, created from the code on main at d556ff9; AGENTS.md §4 keeps the rules) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
 
 How DeckCraft is built today. The binding rules (layering, everything is a command, thin UI, never
 break wasm, never crash) are in [AGENTS.md](../AGENTS.md) §3–§5; this document describes what
@@ -70,8 +70,9 @@ overlays an invisible real-text layer with embedded font subsets.
 `cargo xtask ci`: rustfmt check, clippy `-D warnings`, tests, layering, asset attribution
 (`cargo xtask assets`), wasm32 check. CI runs it on Ubuntu for every PR and push to `main`.
 This fork releases on a `v*` tag: one Linux x86_64 tarball in upstream's shape, with
-`SHA256SUMS.txt`, as a GitHub release of the fork. Upstream's signed macOS, Windows, FreeBSD and
-web builds are not part of it.
+`SHA256SUMS.txt`, as a GitHub release of the fork. The tag names the archive; the binaries inside
+still report the Cargo.toml version. Upstream's signed macOS, Windows, FreeBSD and web builds are
+not part of it.
 
 ## Revision history
 

@@ -33,9 +33,6 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libasound2-dev libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev pkg-config
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: release-linux-x86_64
       - name: Build and package the tarball
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
@@ -46,5 +43,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist/release
-          sha256sum -- * | tee SHA256SUMS.txt
+          sha256sum -- * > SHA256SUMS.txt
           gh release create "$GITHUB_REF_NAME" --title "DeckCraft $GITHUB_REF_NAME" --generate-notes -- *
