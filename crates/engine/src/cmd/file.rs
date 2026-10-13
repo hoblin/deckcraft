@@ -4,7 +4,7 @@ use deckcraft_model::{Presentation, defaults};
 use serde_json::{Value, json};
 
 use super::*;
-use crate::{DocState, EngineError, Result, Session};
+use crate::{DocState, EngineError, Result, Session, Target};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -15,7 +15,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(noundo "file.saveAs", "Save As…", ["File"], Some("Cmd+Shift+S"), "{path, format?}", has_doc, save_as),
         cmd!(noundo "file.saveTemplate", "Save as Template…", ["File"], None, "{path: .potx}", has_doc, save_template),
         cmd!(query "file.saveBytes", "Save to Data", [], None, "{format?: deckcraft|pptx|potx|ppsx} → {data: base64}", has_doc, save_bytes_cmd),
-        cmd!(noundo "file.export", "Export…", ["File"], None, "{path, format?: png|jpeg|pptx|potx|ppsx|deckcraft|outline|pdf (else by path), slide?: index, all?: bool, scale?: px per pt, layout?: slides|notes|handouts (pdf), perPage?: 1|2|3|4|6|9, dpi?, slides?: [index], includeHidden?, textLayer?, frame?}", has_doc, export),
+        cmd!(noundo "file.export", "Export…", ["File"], None, "{path, format?: png|jpeg|pptx|potx|ppsx|deckcraft|outline|pdf (else by path), slide?: index, all?: bool, sheet?: bool (a contact sheet of every slide), scale?: px per pt, width?: px (else by scale), layout?: slides|notes|handouts (pdf), perPage?: 1|2|3|4|6|9, dpi?, slides?: [index], includeHidden?, textLayer?, frame?}", has_doc, export),
         cmd!(query "file.render", "Render Slide", [], None, "{slide?: index, scale?, edit?: bool} → {png: base64, width, height}", has_doc, render),
         cmd!(noundo "file.close", "Close", ["File"], Some("Cmd+W"), "{}", has_doc, close),
         cmd!(
@@ -243,6 +243,23 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
     let scale = f64_or(p, "scale", 2.0);
     match format.as_str() {
         "png" | "jpeg" | "jpg" => {
+            let encode = |img: deckcraft_render::Image| if format == "png" { img.to_png() } else { img.to_jpeg(92) };
+            if bool_or(p, "sheet", false) {
+                let img = deckcraft_render::render_contact_sheet(&st.doc).map_err(|e| bad("file.export", e.to_string()))?;
+                write_file(&path, &encode(img))?;
+                return Ok(json!({"files": [path]}));
+            }
+            let scale = f64_param(p, "width").map(|w| w / st.doc.slide_size.width.max(1.0)).unwrap_or(scale);
+            let opts = deckcraft_render::RenderOpts { scale: scale.clamp(0.01, 16.0), ..Default::default() };
+            let view = match st.selection.target {
+                Target::Master { master } => Some((master, None)),
+                Target::Layout { master, layout } => Some((master, Some(layout))),
+                Target::Slides => None,
+            };
+            if let (None, false, Some((master, layout))) = (usize_param(p, "slide"), bool_or(p, "all", false), view) {
+                write_file(&path, &encode(deckcraft_render::render_layout(&st.doc, master, layout, &opts)))?;
+                return Ok(json!({"files": [path]}));
+            }
             let slides: Vec<usize> = match usize_param(p, "slide") {
                 Some(i) => vec![i],
                 None if bool_or(p, "all", false) => (0..st.doc.slides.len()).collect(),
@@ -253,12 +270,7 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
                 if *i >= st.doc.slides.len() {
                     return Err(bad("file.export", none_at("slide", *i, st.doc.slides.len())));
                 }
-                let img = deckcraft_render::render_slide(
-                    &st.doc,
-                    *i,
-                    &deckcraft_render::RenderOpts { scale: scale.clamp(0.01, 16.0), ..Default::default() },
-                );
-                let bytes = if format == "png" { img.to_png() } else { img.to_jpeg(92) };
+                let bytes = encode(deckcraft_render::render_slide(&st.doc, *i, &opts));
                 let out = if slides.len() == 1 {
                     path.clone()
                 } else {

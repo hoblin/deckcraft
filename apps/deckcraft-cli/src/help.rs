@@ -43,12 +43,21 @@ slide. Prints each image's path and size.
     },
     Subcommand {
         name: "run",
-        usage: "run [--in FILE | --sample] [--cmd COMMAND[=PARAMS]]... [--save OUT] [--export OUT] [--print]",
+        usage: "run [--in FILE | --sample] [--cmd COMMAND[=PARAMS]]... [--save OUT] [--export OUT] [--preview [N | all]] [--print]",
         summary: "run commands on a presentation, then save or export it",
         details: "Runs commands, in order, on one presentation: FILE with --in, the sample presentation with --sample,
 else a new one with an empty title slide. Then --save writes the presentation: .deckcraft keeps
 everything; .pptx, .potx, .ppsx, .pdf and .md (the outline) are written as convert writes them. --export writes the
 current slide as .png or .jpg, or the presentation as .pdf or .pptx.
+
+--preview draws a picture of the result once the commands have run, so you can look at it in the same
+step: the current slide 960 pixels wide (in Slide Master view, the master or layout being edited), or
+with N the slide at index N, or with `all` a contact sheet of every slide, small and labelled with its
+index; a deck too long for one readable sheet is refused. It is written as NAME.preview.png next to
+the --save presentation, else the --in one (else as preview.png in the current folder), replacing the
+last one.
+
+  deckcraft-cli run --in q3.deckcraft --cmd 'slide.go={\"index\":2}' --preview
 
 Each --cmd is one command: COMMAND is a command id, then `=`, then the command's parameters as one
 JSON object. Quote it for the shell. A command that needs no parameters is just its id.
@@ -76,8 +85,8 @@ What the ids don't say:
   master or layout, and format.* on a placeholder sets the text style slides inherit from it.
 
 If a command fails, run stops there and saves nothing. Without --print, run ends with one line, e.g.
-`OK: 3 commands ran, saved q3.deckcraft`; --print shows each command's answer instead, such as the id
-of an inserted shape.",
+`OK: 3 commands ran, saved q3.deckcraft, preview q3.preview.png (slide index 2)`; --print shows each
+command's answer instead, such as the id of an inserted shape, and the preview on a line of its own.",
     },
     Subcommand {
         name: "commands",

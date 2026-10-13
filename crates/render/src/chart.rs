@@ -36,7 +36,18 @@ fn series_fill(ctx: &Ctx, c: &Chart, i: usize, s: Option<&deckcraft_model::chart
     }
 }
 
-fn label(ctx: &mut RenderContext, rctx: &Ctx, m: Affine, text: &str, r: Rect, size: f64, align: Align, anchor: Anchor, col: Rgba, bold: bool) {
+pub(crate) fn label(
+    ctx: &mut RenderContext,
+    rctx: &Ctx,
+    m: Affine,
+    text: &str,
+    r: Rect,
+    size: f64,
+    align: Align,
+    anchor: Anchor,
+    col: Rgba,
+    bold: bool,
+) {
     let mut body = TextBody::from_text(text);
     body.body.inset_l = Some(0.0);
     body.body.inset_r = Some(0.0);

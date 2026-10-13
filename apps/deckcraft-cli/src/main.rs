@@ -190,9 +190,24 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut save = None;
     let mut export = None;
     let mut print = false;
-    let mut it = args.iter();
+    let mut preview = None;
+    let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
+            "--preview" => {
+                preview = Some(match it.next_if(|v| !v.starts_with("--")).map(String::as_str) {
+                    None => Preview::Current,
+                    Some("all") => Preview::ContactSheet,
+                    Some(v) if !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()) => {
+                        Preview::Slide(v.parse().map_err(|_| format!("--preview {v}: no slide has so large an index."))?)
+                    }
+                    Some(v) => {
+                        return Err(format!(
+                            "--preview was given `{v}`; it takes a slide index, `all` for a contact sheet, or nothing for the current slide."
+                        ));
+                    }
+                });
+            }
             "--in" => input = Some(it.next().cloned().ok_or("--in needs a file")?),
             "--sample" => sample = true,
             "--cmd" => cmds.push(it.next().cloned().ok_or("--cmd needs COMMAND[=PARAMS]")?),
@@ -202,7 +217,7 @@ fn run(args: &[String]) -> Result<(), String> {
             other => {
                 return Err(format!(
                     "run was given `{other}`, which it doesn't take. run takes --in FILE or --sample, --cmd COMMAND=PARAMS (any number), \
-                     --save OUT, --export OUT and --print"
+                     --save OUT, --export OUT, --preview [N | all] and --print"
                 ));
             }
         }
@@ -246,6 +261,17 @@ fn run(args: &[String]) -> Result<(), String> {
         }
     }
     let mut done = vec![if total == 1 { "1 command ran".to_string() } else { format!("{total} commands ran") }];
+    let mut shown = None;
+    if let Some(which) = preview {
+        let deck = save.as_deref().or(input.as_deref()).map(std::path::Path::new);
+        let file = match deck {
+            Some(deck) => deck.with_file_name(format!("{}.preview.png", deck.file_stem().and_then(|s| s.to_str()).unwrap_or("deck"))),
+            None => std::path::PathBuf::from("preview.png"),
+        };
+        let what = draw_preview(&mut s, which, &file.to_string_lossy())
+            .map_err(|e| if unsaved { format!("{e} Nothing was saved or exported.") } else { e })?;
+        shown = Some(format!("preview {} ({what})", file.display()));
+    }
     if let Some(p) = save {
         s.execute("file.saveAs", &json!({"path": p})).map_err(|e| e.to_string())?;
         done.push(format!("saved {p}"));
@@ -254,10 +280,56 @@ fn run(args: &[String]) -> Result<(), String> {
         s.execute("file.export", &json!({"path": p})).map_err(|e| e.to_string())?;
         done.push(format!("exported {p}"));
     }
+    if let Some(said) = shown {
+        if print {
+            outln!("{said}");
+        }
+        done.push(said);
+    }
     if !print {
         outln!("OK: {}", done.join(", "));
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum Preview {
+    Current,
+    Slide(usize),
+    ContactSheet,
+}
+
+const PREVIEW_WIDTH: f64 = 960.0;
+
+/// Draws the preview into `file` through file.export and says what it shows.
+fn draw_preview(s: &mut Session, which: Preview, file: &str) -> Result<String, String> {
+    use deckcraft_engine::Target;
+    let st = s.doc().map_err(|e| e.to_string())?;
+    let n = st.doc.slides.len();
+    let (params, what) = match (which, st.selection.target) {
+        (Preview::ContactSheet, _) => (json!({"sheet": true}), format!("contact sheet of {n} slides")),
+        (Preview::Current, Target::Master { master }) => (json!({}), format!("slide master {master}")),
+        (Preview::Current, Target::Layout { master, layout }) => (json!({}), format!("layout {layout} of slide master {master}")),
+        (Preview::Current, Target::Slides) if n == 0 => return Err("--preview: the presentation has no slides.".into()),
+        (Preview::Current, Target::Slides) => (json!({"slide": st.selection.slide}), format!("slide index {}", st.selection.slide)),
+        (Preview::Slide(i), _) if i >= n && n == 0 => return Err(format!("--preview {i}: the presentation has no slides.")),
+        (Preview::Slide(i), _) if i >= n => return Err(format!("--preview {i}: no slide at index {i}; indices run 0–{}.", n - 1)),
+        (Preview::Slide(i), _) => (json!({"slide": i}), format!("slide index {i}")),
+    };
+    let arg = match which {
+        Preview::Current => String::new(),
+        Preview::Slide(i) => format!(" {i}"),
+        Preview::ContactSheet => " all".into(),
+    };
+    let mut params = params;
+    params["path"] = json!(file);
+    params["format"] = json!("png");
+    params["width"] = json!(PREVIEW_WIDTH);
+    s.execute("file.export", &params).map_err(|e| match e {
+        deckcraft_engine::EngineError::BadParams { msg, .. } => format!("--preview{arg}: {msg}."),
+        e => format!("--preview{arg}: {e}"),
+    })?;
+    Ok(what)
 }
 
 fn params(id: &str, json: &str) -> Result<Value, String> {

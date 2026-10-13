@@ -546,3 +546,48 @@ fn hyperlinks_draw_in_the_hyperlink_colour_underlined() {
     let own = px(&run_deck(RunProps { link, fill: red.clone(), ..Default::default() }));
     assert_eq!(diff(&own, &px(&run_deck(RunProps { fill: red, underline: Some("sng".into()), ..Default::default() }))), 0);
 }
+
+#[test]
+fn a_contact_sheet_shows_every_slide_under_its_index() {
+    let mut p = deck_with(vec![]);
+    let dark = std::sync::Arc::new(deckcraft_model::Slide {
+        background: Some(deckcraft_model::Background::Fill { fill: Fill::solid(ColorRef::rgb(Rgba::BLACK)) }),
+        ..(*p.slides[0]).clone()
+    });
+    let hidden = std::sync::Arc::new(deckcraft_model::Slide { hidden: true, ..(*p.slides[0]).clone() });
+    p.slides = vec![p.slides[0].clone(), dark.clone(), p.slides[0].clone(), hidden, dark];
+    let img = render_contact_sheet(&p).unwrap();
+    assert_eq!((img.width, img.height), (1360, 456), "four slides to a row, then a second row");
+    let y = 16 + 24 + 90;
+    assert_eq!(img.pixel(16 + 320 + 16 + 160, y), [0, 0, 0, 255], "slide 1 is in the second cell");
+    assert_eq!(img.pixel(16 + 160, y), [255, 255, 255, 255], "slide 0 is in the first");
+    assert_eq!(img.pixel(16 + 160, 16 + 24 + 180 + 16 + 24 + 90), [0, 0, 0, 255], "slide 4 starts the second row");
+    let ink = |x0: u32| (16..16 + 24).flat_map(|y| (x0..x0 + 120).map(move |x| (x, y))).filter(|&(x, y)| img.pixel(x, y)[0] < 128).count();
+    let (plain, marked) = (ink(16), ink(16 + 3 * (320 + 16)));
+    assert!(plain > 10, "the label 0 is drawn above the first slide");
+    assert!(marked > 3 * plain, "the hidden slide's label says so: {plain} vs {marked}");
+}
+
+#[test]
+fn a_long_deck_gets_more_and_narrower_slides_within_a_readable_sheet() {
+    let mut p = deck_with(vec![]);
+    let dark = std::sync::Arc::new(deckcraft_model::Slide {
+        background: Some(deckcraft_model::Background::Fill { fill: Fill::solid(ColorRef::rgb(Rgba::BLACK)) }),
+        ..(*p.slides[0]).clone()
+    });
+    p.slides = vec![dark; 300];
+    let img = render_contact_sheet(&p).unwrap();
+    assert!(img.width <= CONTACT_SHEET_SIDE && img.height <= CONTACT_SHEET_SIDE, "{}×{}", img.width, img.height);
+    let ink = img.pixels.as_chunks::<4>().0.iter().filter(|px| px[0] == 0 && px[3] == 255).count();
+    let per_slide = ink / 300;
+    assert!(per_slide >= 96 * 54, "every slide is drawn whole, at least 96 px wide: {per_slide} px each");
+}
+
+#[test]
+fn a_contact_sheet_refuses_what_it_cant_show_readably() {
+    let mut p = deck_with(vec![]);
+    p.slides = vec![p.slides[0].clone(); 1000];
+    assert_eq!(render_contact_sheet(&p).err(), Some(ContactSheetError::TooMany(1000)));
+    p.slides.clear();
+    assert_eq!(render_contact_sheet(&p).err(), Some(ContactSheetError::NoSlides));
+}
