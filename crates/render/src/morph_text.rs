@@ -9,7 +9,7 @@ use deckcraft_text::{Fields, GlyphRun, Opts, TextLayout};
 use kurbo::{Affine, Point, Vec2};
 use vello_cpu::RenderContext;
 
-use crate::{color, draw_glyph, draw_layout, shape_geometry, text_transform};
+use crate::{color, draw_glyph, draw_layout, inherited_geometry, text_transform};
 
 /// The texts of two frame shapes (see [`crate::render_blend`]) morphed by words or characters.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -90,7 +90,7 @@ fn matches(a: &[Token], b: &[Token]) -> Vec<Option<usize>> {
 
 fn layout(ctx: &Ctx, s: &Shape, x: Xfrm, fields: &dyn Fields) -> Option<TextLayout> {
     let body = s.text.as_ref().filter(|b| !b.is_empty())?;
-    let rect = shape_geometry(s, x.w, x.h).text_rect;
+    let rect = inherited_geometry(ctx, s, x.w, x.h).text_rect;
     Some(deckcraft_text::layout(ctx, s, body, &Opts { rect, fields, prompt_color: None, no_shrink: false }))
 }
 
@@ -125,12 +125,12 @@ pub(crate) fn draw(
     // Rotated (vertical) text: no per-word travel, the two texts cross-fade on the moving box.
     let rotated = la.as_ref().is_some_and(|l| l.rotation != 0.0) || lb.as_ref().is_some_and(|l| l.rotation != 0.0);
     if rotated || la.is_none() || lb.is_none() {
-        for (l, s, alpha, x) in [(la, a, 1.0 - t, m.from), (lb, b, t, m.to)] {
+        for (l, c, s, alpha, x) in [(la, ca, a, 1.0 - t, m.from), (lb, cb, b, t, m.to)] {
             if let Some(l) = l
                 && alpha > 0.001
             {
                 ctx.push_layer(None, None, Some(alpha as f32), None, None);
-                draw_layout(ctx, &l, shape_geometry(s, x.w, x.h).text_rect, mt);
+                draw_layout(ctx, &l, inherited_geometry(c, s, x.w, x.h).text_rect, mt);
                 ctx.pop_layer();
             }
         }
@@ -141,7 +141,7 @@ pub(crate) fn draw(
     let (tb, loose_b) = tokens(&lb, m.chars);
     let pairs = matches(&ta, &tb);
     // Flipped boxes keep their text readable, as when drawn (see `text_transform`).
-    let (tra, trb) = (shape_geometry(a, m.from.w, m.from.h).text_rect, shape_geometry(b, m.to.w, m.to.h).text_rect);
+    let (tra, trb) = (inherited_geometry(ca, a, m.from.w, m.from.h).text_rect, inherited_geometry(cb, b, m.to.w, m.to.h).text_rect);
     let (ma, mb) = (text_transform(view * m.from.affine(), tra, 0.0), text_transform(view * m.to.affine(), trb, 0.0));
     let (mta, mtb) = (text_transform(mt, tra, 0.0), text_transform(mt, trb, 0.0));
     let c = mta.as_coeffs();

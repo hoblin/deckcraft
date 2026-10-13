@@ -1004,6 +1004,44 @@ fn slide_inspect_in_master_view_inspects_the_layout_or_master() {
     );
 }
 
+fn rounded_layout_placeholder_on_a_slide(preset: &str) -> (Session, u64) {
+    let mut s = template();
+    s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
+    let content = placeholder(&s, deckcraft_model::PhType::Obj);
+    s.execute("shape.change", &json!({"ids": [content], "preset": preset})).unwrap();
+    s.execute("view.closeMaster", &json!({})).unwrap();
+    s.execute("slide.new", &json!({"layout": "titleAndContent"})).unwrap();
+    let on_slide = placeholder(&s, deckcraft_model::PhType::Obj);
+    (s, on_slide)
+}
+
+#[test]
+fn adjusting_a_placeholder_keeps_the_shape_it_takes_from_its_layout() {
+    let (mut s, id) = rounded_layout_placeholder_on_a_slide("roundRect");
+    s.execute("shape.adjust", &json!({"ids": [id], "index": 0, "value": 30000})).unwrap();
+    let sh = s.doc().unwrap().shape(deckcraft_model::ShapeId(id as u32)).unwrap().clone();
+    assert_eq!(sh.geom, deckcraft_model::Geom::Preset { name: "roundRect".into(), adj: vec![30000.0] });
+    assert!(sh.geom_set, "the adjusted shape is the placeholder's own");
+    let v = s.execute("slide.inspect", &json!({})).unwrap();
+    let presets: Vec<&str> = v["shapes"].as_array().unwrap().iter().filter_map(|sh| sh["preset"].as_str()).collect();
+    assert_eq!(presets, ["rect", "roundRect"], "{v}");
+}
+
+#[test]
+fn a_placeholder_is_edited_with_the_shape_it_takes_from_its_layout() {
+    let (mut s, id) = rounded_layout_placeholder_on_a_slide("triangle");
+    let st = s.doc().unwrap();
+    let sh = st.shape(deckcraft_model::ShapeId(id as u32)).unwrap();
+    let x = cmd::xfrm_of(&st.doc, &st.selection, sh);
+    let triangle = deckcraft_model::Shape { geom: deckcraft_model::Geom::preset("triangle"), ..Default::default() };
+    let geo = deckcraft_render::shape_geometry(&triangle, x.w, x.h);
+    let sites = s.execute("shape.sites", &json!({"id": id})).unwrap();
+    assert_eq!(sites.as_array().unwrap().len(), geo.sites.len(), "{sites}");
+    let handle = geo.handles.first().map(|h| x.affine() * h.pos).unwrap();
+    s.execute("edit.select", &json!({"ids": [id]})).unwrap();
+    assert!(matches!(s.hit_test(handle, 1.0), Some(tools::Hit::Adjust { index: 0, .. })), "{:?}", s.hit_test(handle, 1.0));
+}
+
 #[test]
 fn slides_take_the_shape_of_their_layout_placeholders() {
     let mut s = template();

@@ -162,8 +162,17 @@ fn box_of(ctx: Option<&Ctx>, s: &Shape) -> Option<Xfrm> {
 }
 
 /// The content of a shape apart from what Morph interpolates (identity, box and fill).
+/// `s` with the geometry it is drawn with: a placeholder without its own takes its layout's or
+/// master's.
+fn drawn(ctx: Option<&Ctx>, s: &Shape) -> Shape {
+    match ctx.and_then(|c| resolve::inherited_geom(c, s)) {
+        Some(g) => Shape { geom: g.clone(), ..s.clone() },
+        None => s.clone(),
+    }
+}
+
 fn content(s: &Shape) -> Shape {
-    Shape { id: ShapeId(0), name: String::new(), xfrm: None, fill: None, ..s.clone() }
+    Shape { id: ShapeId(0), name: String::new(), xfrm: None, fill: None, geom_set: false, ..s.clone() }
 }
 
 /// Whether two shapes differ in their geometry only, and it is drawn as an outline (shapes,
@@ -217,6 +226,7 @@ pub fn morph_frame(pres: &Presentation, a: &Slide, b: &Slide, t: f64, hidden_b: 
             }
             continue;
         };
+        let (sa, sb) = (&drawn(ca.as_ref(), sa), &drawn(cb.as_ref(), sb));
         let (xa, xb) = (box_of(ca.as_ref(), sa), box_of(cb.as_ref(), sb));
         let x = match (xa, xb) {
             (Some(xa), Some(xb)) => Some(morph_xfrm(xa, xb, s)),

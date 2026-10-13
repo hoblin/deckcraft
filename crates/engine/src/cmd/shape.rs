@@ -209,19 +209,36 @@ fn flip(s: &mut Session, p: &Value) -> Result<Value> {
 fn adjust(s: &mut Session, p: &Value) -> Result<Value> {
     let i = usize_param(p, "index").unwrap_or(0).min(16);
     let v = f64_param(p, "value").ok_or_else(|| bad("shape.adjust", "missing `value`"))?;
+    let geoms: std::collections::HashMap<ShapeId, Geom> = {
+        let ids = targets(s, p)?;
+        let st = s.doc()?;
+        ids.into_iter().filter_map(|id| st.shape(id).map(|sh| (id, geom_of(&st.doc, &st.selection, sh)))).collect()
+    };
     edit_shapes(s, p, "shape.adjust", |sh| {
-        if let Geom::Preset { name, adj } = &mut sh.geom {
-            let defaults = deckcraft_geom::preset::info(name).map(|x| x.defaults).unwrap_or(&[]);
-            while adj.len() <= i {
-                let k = adj.len();
-                adj.push(defaults.get(k).copied().unwrap_or(0.0));
-            }
-            if let Some(slot) = adj.get_mut(i) {
-                *slot = v;
-            }
-        }
+        let geom = geoms.get(&sh.id).cloned().unwrap_or_else(|| sh.geom.clone());
+        set_adjust(sh, &geom, &[(i, v)]);
         Ok(())
     })
+}
+
+/// Set adjust values on a preset shape. A placeholder drawn with its layout's or master's preset
+/// (`geom`) takes a copy of it first, which is then its own.
+pub(crate) fn set_adjust(sh: &mut deckcraft_model::Shape, geom: &Geom, vals: &[(usize, f64)]) {
+    if matches!(geom, Geom::Preset { .. }) {
+        sh.geom = geom.clone();
+    }
+    let Geom::Preset { name, adj } = &mut sh.geom else { return };
+    let defaults = deckcraft_geom::preset::info(name.as_str()).map(|x| x.defaults).unwrap_or(&[]);
+    for (i, v) in vals {
+        while adj.len() <= *i {
+            let k = adj.len();
+            adj.push(defaults.get(k).copied().unwrap_or(0.0));
+        }
+        if let Some(slot) = adj.get_mut(*i) {
+            *slot = *v;
+        }
+    }
+    sh.geom_set |= sh.ph.is_some();
 }
 
 fn change(s: &mut Session, p: &Value) -> Result<Value> {

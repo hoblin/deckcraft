@@ -229,7 +229,7 @@ impl Session {
                     }
                     continue;
                 }
-                let geo = deckcraft_render::shape_geometry(sh, x.w, x.h);
+                let geo = cmd::geometry_of(&st.doc, &st.selection, sh, x.w, x.h);
                 for hd in &geo.handles {
                     if (x.affine() * hd.pos - p).hypot() <= tol * 1.6 {
                         return Some(Hit::Adjust { id: *id, index: hd.index });
@@ -560,9 +560,10 @@ impl Session {
                 let st = self.doc()?;
                 let Some(sh) = st.shape(id).cloned() else { return Ok(Value::Null) };
                 let local = orig.affine().inverse() * p;
-                let geo = deckcraft_render::shape_geometry(&sh, orig.w, orig.h);
+                let geom = cmd::geom_of(&st.doc, &st.selection, &sh);
+                let geo = cmd::geometry_of(&st.doc, &st.selection, &sh, orig.w, orig.h);
                 let Some(h) = geo.handles.iter().find(|h| h.index == index) else { return Ok(Value::Null) };
-                let free2d = matches!(sh.geom.preset_name(), Some(n) if n.contains("Callout") && !n.contains("Arrow"));
+                let free2d = matches!(geom.preset_name(), Some(n) if n.contains("Callout") && !n.contains("Arrow"));
                 let vals: Vec<(usize, f64)> = if free2d {
                     let dx = (local.x - orig.w / 2.0) / orig.w.max(1e-6) * 1e5;
                     let dy = (local.y - orig.h / 2.0) / orig.h.max(1e-6) * 1e5;
@@ -572,19 +573,8 @@ impl Session {
                 };
                 self.edit(|doc, sel| {
                     let list = crate::shapes_mut(doc, sel).ok_or_else(|| cmd::bad("adjust", "no slide"))?;
-                    if let Some(sh) = deckcraft_model::find_shape_mut(list, id)
-                        && let deckcraft_model::Geom::Preset { name, adj } = &mut sh.geom
-                    {
-                        let defaults = deckcraft_geom::preset::info(name).map(|x| x.defaults).unwrap_or(&[]);
-                        for (i, v) in &vals {
-                            while adj.len() <= *i {
-                                let k = adj.len();
-                                adj.push(defaults.get(k).copied().unwrap_or(0.0));
-                            }
-                            if let Some(slot) = adj.get_mut(*i) {
-                                *slot = *v;
-                            }
-                        }
+                    if let Some(sh) = deckcraft_model::find_shape_mut(list, id) {
+                        cmd::shape::set_adjust(sh, &geom, &vals);
                     }
                     Ok(())
                 })?;
@@ -1238,7 +1228,7 @@ fn hit_shape(st: &crate::DocState, sh: &Shape, p: Point, tol: f64) -> Option<Hit
             let has_text = matches!(sh.kind, ShapeKind::Shape) && (sh.text.as_ref().is_some_and(|t| !t.is_empty()) || sh.ph.is_some() || sh.text_box);
             // Empty interiors of unfilled, text-less shapes don't catch clicks.
             let filled = !matches!(sh.fill, Some(deckcraft_model::Fill::None)) || sh.style.is_some();
-            let geo = deckcraft_render::shape_geometry(sh, x.w, x.h);
+            let geo = cmd::geometry_of(&st.doc, &st.selection, sh, x.w, x.h);
             let in_geo = {
                 use deckcraft_geom::KurboShape;
                 geo.outline().winding(local) != 0 || deckcraft_geom::near_path(&geo.outline(), local, tol)

@@ -142,10 +142,7 @@ pub(crate) fn ctx_for<'a>(doc: &'a Presentation, sel: &Selection) -> Option<Ctx<
 
 /// Where a shape of the edited tree draws its text, at size `w` × `h`.
 pub fn text_rect(st: &DocState, sh: &deckcraft_model::Shape, w: f64, h: f64) -> deckcraft_geom::Rect {
-    match ctx_for(&st.doc, &st.selection) {
-        Some(ctx) => deckcraft_render::inherited_geometry(&ctx, sh, w, h).text_rect,
-        None => deckcraft_render::shape_geometry(sh, w, h).text_rect,
-    }
+    super::geometry_of(&st.doc, &st.selection, sh, w, h).text_rect
 }
 
 /// Lay out the text being edited (for vertical caret movement and hit testing).

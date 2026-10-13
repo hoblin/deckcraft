@@ -399,7 +399,7 @@ fn overlays(app: &mut SlideApp, ui: &Ui, painter: &egui::Painter, xf: Xf, t: &To
             for h in hs {
                 painter.circle(xf.to_screen(h), 4.5, t.handle_fill, Stroke::new(1.0, t.handle_stroke));
             }
-            let geo = deckcraft_render::shape_geometry(sh, x.w, x.h);
+            let geo = deckcraft_engine::cmd::geometry_of(&st.doc, &st.selection, sh, x.w, x.h);
             for hd in &geo.handles {
                 let q = xf.to_screen(a * hd.pos);
                 painter.circle(q, 4.5, Color32::from_rgb(0xFF, 0xD2, 0x3F), Stroke::new(1.0, Color32::from_rgb(0x8A, 0x6A, 0x00)));
