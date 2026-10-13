@@ -257,15 +257,38 @@ fn step(cur: f64, up: bool) -> f64 {
 }
 
 fn grow_shrink(s: &mut Session, up: bool) -> Result<Value> {
+    let sizes = level_sizes(s);
+    if super::text::format_style(s, &move |id, level, ls| {
+        if let Some(cur) = sizes.get(&id).and_then(|l| l.get(usize::from(level)).copied().flatten()).or(ls.run.size) {
+            ls.run.size = Some(step(cur, up));
+        }
+    })? {
+        return ok();
+    }
     // Each run steps from its own size, like PowerPoint.
-    let st = s.doc()?;
-    let ctx_sizes = current_run(s).size.unwrap_or(18.0);
-    let _ = st;
-    let base = ctx_sizes;
-    format_run(s, &move |r| {
+    let base = current_run(s).size.unwrap_or(18.0);
+    format_runs(s, &move |r| {
         let cur = r.size.unwrap_or(base);
         r.size = Some(step(cur, up));
     })
+}
+
+fn level_sizes(s: &Session) -> std::collections::HashMap<ShapeId, Vec<Option<f64>>> {
+    let Ok(st) = s.doc() else { return Default::default() };
+    if st.selection.target == crate::Target::Slides {
+        return Default::default();
+    }
+    let Some(ctx) = super::text::ctx_for(&st.doc, &st.selection) else { return Default::default() };
+    let ids = match &st.selection.text {
+        Some(t) => vec![t.shape],
+        None => st.selection.shapes.clone(),
+    };
+    let sizes = |shape| {
+        (0..9)
+            .map(|level| resolve::run(&ctx, shape, &deckcraft_model::Paragraph { level, ..Default::default() }, &RunProps::default()).size)
+            .collect()
+    };
+    ids.into_iter().filter_map(|id| st.shape(id).map(|shape| (id, sizes(shape)))).collect()
 }
 fn grow(s: &mut Session, _p: &Value) -> Result<Value> {
     grow_shrink(s, true)

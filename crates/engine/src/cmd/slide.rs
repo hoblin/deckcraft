@@ -592,6 +592,7 @@ fn from_outline(s: &mut Session, p: &Value) -> Result<Value> {
         let new: Vec<_> = doc.slides.drain(before..).collect();
         for (k, sl) in new.into_iter().enumerate() {
             doc.slides.insert(at + k, sl);
+            super::design::place_footers(doc, at + k, false);
         }
         Ok(json!({"slides": n}))
     })

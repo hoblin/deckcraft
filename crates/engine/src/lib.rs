@@ -1,9 +1,10 @@
 //! The DeckCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`slide.new`, `shape.insert`,
-//! `text.insert`, `format.bold`…) and JSON parameters. The egui UI, the CLI, the control channel
-//! and MCP all go through [`Session::execute`]. Pointer tools reduce to commands too, so every
-//! gesture is journaled, undoable and replayable.
+//! `text.insert`, `format.bold`…) and JSON parameters. The egui UI goes through
+//! [`Session::execute`]; the CLI, the control channel and MCP go through [`Session::call`], which
+//! also refuses parameters a command doesn't take and answers in words. Pointer tools reduce to
+//! commands too, so every gesture is journaled, undoable and replayable.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 

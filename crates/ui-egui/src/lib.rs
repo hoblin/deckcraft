@@ -426,11 +426,15 @@ impl SlideApp {
 
     pub fn save_as_dialog(&mut self, format: &str) {
         let name = self.session.active().map(|d| d.title()).unwrap_or_else(|| "Presentation".into());
-        let ext = if format == "pptx" { "pptx" } else { "deckcraft" };
+        let (ext, cmd) = match format {
+            "pptx" => ("pptx", "file.saveAs"),
+            "potx" => ("potx", "file.saveTemplate"),
+            _ => ("deckcraft", "file.saveAs"),
+        };
         let suggested = format!("{name}.{ext}");
         if let Some(pick) = self.services.pick_save.as_mut() {
             if let Some(path) = pick(&suggested) {
-                match self.session.execute("file.saveAs", &json!({"path": path})) {
+                match self.session.execute(cmd, &json!({"path": path})) {
                     Ok(_) => {
                         self.set_status(format!("Saved {path}"));
                         self.ui.recent.retain(|p| *p != path);
@@ -486,11 +490,11 @@ impl SlideApp {
                 UiRequest::Pane { id } => self.ui.pane = Some(id),
                 UiRequest::StartShow { from } => self.start_show(from, false),
                 UiRequest::Message { text } => self.set_status(text),
-                UiRequest::PickFile { purpose } => {
-                    if purpose == "saveAs" {
-                        self.save_as_dialog("deckcraft");
-                    }
-                }
+                UiRequest::PickFile { purpose } => match purpose.as_str() {
+                    "saveAs" => self.save_as_dialog("deckcraft"),
+                    "saveTemplate" => self.save_as_dialog("potx"),
+                    _ => {}
+                },
                 UiRequest::Media { action, shape, ms } => {
                     let owner = if self.show.is_some() { media::Owner::Show } else { media::Owner::Editor };
                     if let Some(doc) = self.session.active().map(|d| d.doc.clone()) {
@@ -944,6 +948,27 @@ mod tests {
         harness.run_steps(2);
         assert!(!harness.state().home_open(), "a new presentation leaves Home");
         assert_eq!(harness.state().session.documents().len(), 2);
+    }
+
+    #[test]
+    fn save_as_template_picks_a_potx_and_saves_a_template() {
+        let path = std::env::temp_dir().join(format!("dc-ui-template-{}.potx", std::process::id()));
+        let picked = path.to_str().unwrap().to_string();
+        let suggested = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let seen = suggested.clone();
+        let services = Services {
+            pick_save: Some(Box::new(move |name| {
+                *seen.lock().unwrap() = name.to_string();
+                Some(picked.clone())
+            })),
+            ..Default::default()
+        };
+        let mut app = SlideApp::new(Session::with_new(), services);
+        app.run("file.saveTemplate", json!({})).unwrap();
+        assert!(suggested.lock().unwrap().ends_with(".potx"), "{}", suggested.lock().unwrap());
+        let bytes = std::fs::read(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert!(bytes.starts_with(b"PK"), "a zip package");
     }
 
     #[test]

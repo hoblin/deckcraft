@@ -204,7 +204,10 @@ fn save_as(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn save_template(s: &mut Session, p: &Value) -> Result<Value> {
     match str_param(p, "path") {
-        None => save_as(s, p),
+        None => {
+            s.ui_requests.push(crate::UiRequest::PickFile { purpose: "saveTemplate".into() });
+            Ok(json!({"needsPath": true}))
+        }
         Some(path) if format_for_path(path) == "potx" => save(s, &json!({"path": path})),
         Some(path) => Err(bad("file.saveTemplate", format!("a template is a .potx file, and `{path}` isn't one"))),
     }
