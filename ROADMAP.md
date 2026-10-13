@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~20 points and ~120–210 h away
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (progress log for 2026-10-12 and 2026-10-13; previous: minor, hours to ~95% per audience added; ready 56% → 55%; stage stays alpha; before that: major, full re-measure against PowerPoint for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (progress log for 2026-10-12 and 2026-10-13, the fork's release workflow; previous: minor, hours to ~95% per audience added; ready 56% → 55%; stage stays alpha; before that: major, full re-measure against PowerPoint for Mac 16.113.4; restructured to the craftrules progress-docs standard) · **Target:** Microsoft PowerPoint for Mac 16.113 (Microsoft 365)
 
 DeckCraft aims at full PowerPoint parity, and to be better: faster, open (a documented zip+JSON
 format plus PPTX), scriptable by agents (CLI, JSON control channel, MCP), and available everywhere
@@ -128,6 +128,7 @@ app's JSON control channel (`deckcraft --control PORT`).
 
 | Date | What landed |
 |---|---|
+| 2026-10-13 | The fork releases a Linux x86_64 tarball with `SHA256SUMS.txt` on a `v*` tag, in upstream's archive shape; upstream's multi-platform release, FreeBSD and packaging-lint workflows are gone |
 | 2026-10-13 | `deckcraft-cli run --preview` draws a picture of the result next to the deck in the same call: the current slide, a given slide, or a contact sheet of every slide labelled with its index |
 | 2026-10-13 | table.selectCells, comment.add, arrange.reorder, shape.connect and animation.painter report a missing or off-slide shape like every shape command; slide.delete and slide.layout name the range, and slide.delete refuses slide ids that don't exist; a placeholder that takes its shape from its layout or master keeps it when adjusted, and is edited (handles, hit testing, connection sites, merge) and morphed with it |
 | 2026-10-13 | Fixes from the upstream PR reviews: commands that read only `id` refuse `ids`, `edit.cut` no longer lists `ids`, `describe` keeps a remark with its option and offers a bare call for an all-optional set, `format.grow`/`shrink` in Slide Master view step each level from its own size, a layout set back to a rectangle stays one under a rounded master, slides from an outline carry the template's footers, and Save as Template from the app saves a `.potx` |
