@@ -161,16 +161,17 @@ fn box_of(ctx: Option<&Ctx>, s: &Shape) -> Option<Xfrm> {
     }
 }
 
-/// The content of a shape apart from what Morph interpolates (identity, box and fill).
 /// `s` with the geometry it is drawn with: a placeholder without its own takes its layout's or
 /// master's.
-fn drawn(ctx: Option<&Ctx>, s: &Shape) -> Shape {
+fn drawn<'a>(ctx: Option<&Ctx>, s: &'a Shape) -> std::borrow::Cow<'a, Shape> {
     match ctx.and_then(|c| resolve::inherited_geom(c, s)) {
-        Some(g) => Shape { geom: g.clone(), ..s.clone() },
-        None => s.clone(),
+        Some(g) => std::borrow::Cow::Owned(Shape { geom: g.clone(), ..s.clone() }),
+        None => std::borrow::Cow::Borrowed(s),
     }
 }
 
+/// The content of a shape apart from what Morph interpolates (identity, box and fill) and whether
+/// its geometry is its own.
 fn content(s: &Shape) -> Shape {
     Shape { id: ShapeId(0), name: String::new(), xfrm: None, fill: None, geom_set: false, ..s.clone() }
 }
@@ -226,7 +227,8 @@ pub fn morph_frame(pres: &Presentation, a: &Slide, b: &Slide, t: f64, hidden_b: 
             }
             continue;
         };
-        let (sa, sb) = (&drawn(ca.as_ref(), sa), &drawn(cb.as_ref(), sb));
+        let (da, db) = (drawn(ca.as_ref(), sa), drawn(cb.as_ref(), sb));
+        let (sa, sb) = (da.as_ref(), db.as_ref());
         let (xa, xb) = (box_of(ca.as_ref(), sa), box_of(cb.as_ref(), sb));
         let x = match (xa, xb) {
             (Some(xa), Some(xb)) => Some(morph_xfrm(xa, xb, s)),

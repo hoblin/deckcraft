@@ -674,7 +674,7 @@ fn an_unknown_command_names_the_commands_like_it() {
 }
 
 #[test]
-fn a_shape_off_the_current_slide_is_reported_where_it_is() {
+fn a_shape_off_the_current_slide_or_missing_is_reported_and_nothing_changes() {
     let mut s = session();
     let id = insert(&mut s, "Hi");
     s.call("slide.new", &json!({})).unwrap();
@@ -696,13 +696,13 @@ fn a_shape_off_the_current_slide_is_reported_where_it_is() {
         assert_eq!(said(&mut s, cmd, p), off_slide, "{cmd}");
     }
     let missing = "no shape 9999 in the presentation; slide.inspect lists the shapes of slide index 1, the one being edited";
-    let line = insert(&mut s, "Box");
+    let shape = insert(&mut s, "Box");
     for (cmd, p) in [
         ("arrange.reorder", json!({"id": 9999, "index": 0})),
         ("table.selectCells", json!({"id": 9999})),
         ("comment.add", json!({"text": "x", "id": 9999})),
-        ("shape.connect", json!({"from": line, "to": 9999})),
-        ("shape.connect", json!({"from": line, "to": line, "id": 9999})),
+        ("shape.connect", json!({"from": shape, "to": 9999})),
+        ("shape.connect", json!({"from": shape, "to": shape, "id": 9999})),
         ("animation.painter", json!({"id": 9999})),
     ] {
         assert_eq!(said(&mut s, cmd, p), missing, "{cmd}");
@@ -1004,7 +1004,7 @@ fn slide_inspect_in_master_view_inspects_the_layout_or_master() {
     );
 }
 
-fn rounded_layout_placeholder_on_a_slide(preset: &str) -> (Session, u64) {
+fn slide_placeholder_inheriting(preset: &str) -> (Session, u64) {
     let mut s = template();
     s.execute("view.slideMaster", &json!({"layout": 1})).unwrap();
     let content = placeholder(&s, deckcraft_model::PhType::Obj);
@@ -1017,7 +1017,7 @@ fn rounded_layout_placeholder_on_a_slide(preset: &str) -> (Session, u64) {
 
 #[test]
 fn adjusting_a_placeholder_keeps_the_shape_it_takes_from_its_layout() {
-    let (mut s, id) = rounded_layout_placeholder_on_a_slide("roundRect");
+    let (mut s, id) = slide_placeholder_inheriting("roundRect");
     s.execute("shape.adjust", &json!({"ids": [id], "index": 0, "value": 30000})).unwrap();
     let sh = s.doc().unwrap().shape(deckcraft_model::ShapeId(id as u32)).unwrap().clone();
     assert_eq!(sh.geom, deckcraft_model::Geom::Preset { name: "roundRect".into(), adj: vec![30000.0] });
@@ -1028,8 +1028,17 @@ fn adjusting_a_placeholder_keeps_the_shape_it_takes_from_its_layout() {
 }
 
 #[test]
+fn adjusting_a_placeholder_drawn_with_a_custom_shape_changes_nothing() {
+    use deckcraft_model::{Geom, Shape};
+    let mut sh = Shape { ph: Some(Default::default()), ..Default::default() };
+    let before = sh.clone();
+    cmd::shape::set_adjust(&mut sh, &Geom::Custom { paths: vec![] }, &[(0, 30000.0)]);
+    assert_eq!(sh, before);
+}
+
+#[test]
 fn a_placeholder_is_edited_with_the_shape_it_takes_from_its_layout() {
-    let (mut s, id) = rounded_layout_placeholder_on_a_slide("triangle");
+    let (mut s, id) = slide_placeholder_inheriting("triangle");
     let st = s.doc().unwrap();
     let sh = st.shape(deckcraft_model::ShapeId(id as u32)).unwrap();
     let x = cmd::xfrm_of(&st.doc, &st.selection, sh);
@@ -1139,7 +1148,7 @@ fn deleting_slide_ids_that_dont_exist_deletes_nothing() {
         format!("invalid parameters for `slide.delete`: `ids` is empty; document.inspect lists the slide ids. {takes}")
     );
     assert_eq!(s.doc().unwrap().doc.slides.len(), 3, "a refused delete deletes nothing");
-    s.call("slide.delete", &json!({"ids": [first]})).unwrap();
+    assert_eq!(s.call("slide.delete", &json!({"ids": [first, first]})).unwrap()["deleted"], 1);
     assert_eq!(s.doc().unwrap().doc.slides.len(), 2);
 }
 

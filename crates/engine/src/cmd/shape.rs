@@ -224,9 +224,10 @@ fn adjust(s: &mut Session, p: &Value) -> Result<Value> {
 /// Set adjust values on a preset shape. A placeholder drawn with its layout's or master's preset
 /// (`geom`) takes a copy of it first, which is then its own.
 pub(crate) fn set_adjust(sh: &mut deckcraft_model::Shape, geom: &Geom, vals: &[(usize, f64)]) {
-    if matches!(geom, Geom::Preset { .. }) {
-        sh.geom = geom.clone();
+    if !matches!(geom, Geom::Preset { .. }) {
+        return;
     }
+    sh.geom = geom.clone();
     let Geom::Preset { name, adj } = &mut sh.geom else { return };
     let defaults = deckcraft_geom::preset::info(name.as_str()).map(|x| x.defaults).unwrap_or(&[]);
     for (i, v) in vals {

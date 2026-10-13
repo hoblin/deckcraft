@@ -1214,7 +1214,7 @@ fn hit_shape(st: &crate::DocState, sh: &Shape, p: Point, tol: f64) -> Option<Hit
         }
         _ => {
             if sh.is_line() {
-                let geo = deckcraft_render::shape_geometry(sh, x.w, x.h);
+                let geo = cmd::geometry_of(&st.doc, &st.selection, sh, x.w, x.h);
                 let lw = sh.line.as_ref().and_then(|l| l.width).unwrap_or(1.0);
                 if deckcraft_geom::near_path(&geo.outline(), local, tol.max(lw)) {
                     return Some(Hit::Shape { id: sh.id, text: false });

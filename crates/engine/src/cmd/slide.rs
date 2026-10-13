@@ -224,7 +224,12 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
             let found = |v: &Value| v.as_u64().and_then(|v| u32::try_from(v).ok()).map(SlideId).filter(|id| st.doc.slide_index(*id).is_some());
             let missing: Vec<String> = a.iter().filter(|v| found(v).is_none()).map(Value::to_string).collect();
             match missing.as_slice() {
-                [] => a.iter().filter_map(found).collect(),
+                [] => {
+                    let mut ids: Vec<SlideId> = a.iter().filter_map(found).collect();
+                    ids.sort_unstable();
+                    ids.dedup();
+                    ids
+                }
                 [one] => return Err(bad("slide.delete", format!("no slide has id {one}; document.inspect lists the slide ids"))),
                 many => return Err(bad("slide.delete", format!("no slides have ids {}; document.inspect lists the slide ids", many.join(", ")))),
             }
